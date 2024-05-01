@@ -31,11 +31,21 @@ pub const Lexer = struct {
         var lines = ArrayList(u8).init(self.allocator);
         defer lines.deinit();
 
-        const writer = lines.writer();
-        while (input_stream.streamUntilDelimiter(writer, '\n', null)) {
-            try self.run(lines); // Call run for each line that is read
+        const stdout = std.io.getStdOut().writer();
+        try stdout.print("Welcome to the zlox interpreter!\n", .{});
+        try stdout.print("When you are done, press CTRL+D to quit.\n\n", .{});
+        try stdout.print("> ", .{});
+
+        var buffer: [1024]u8 = undefined;
+        while (input_stream.readUntilDelimiterOrEof(&buffer, '\n')) |line| {
+            if (line) |source| {
+                try self.run(source);
+                try stdout.print("> ", .{});
+            } else {
+                try stdout.print("Goodbye!\n", .{});
+                return ExitStatus.EX_OK;
+            }
         } else |err| switch (err) {
-            error.EndOfStream => return ExitStatus.EX_OK, // Exit if we reach EndOfStream / EOF / Ctrl+D
             else => return err,
         }
     }
@@ -55,23 +65,40 @@ pub const Lexer = struct {
         var buf = std.io.bufferedReader(file.reader());
         var input_stream = buf.reader();
 
-        var lines = ArrayList(u8).init(self.allocator);
-        defer lines.deinit();
-
-        const writer = lines.writer();
-        while (input_stream.streamUntilDelimiter(writer, '\n', null)) {
-            defer lines.clearRetainingCapacity();
+        var buffer: [1024]u8 = undefined;
+        while (input_stream.readUntilDelimiterOrEof(&buffer, '\n')) |line| {
+            if (line) |source| {
+                try self.run(source);
+            } else {
+                return ExitStatus.EX_OK;
+            }
         } else |err| switch (err) {
-            error.EndOfStream => try self.run(lines), // Run the file once we reach the end of the stream
             else => return err,
         }
-
-        return ExitStatus.EX_OK;
     }
 
-    fn run(self: Self, lines: ArrayList(u8)) !void {
+    fn run(self: Self, source: []const u8) !void {
         _ = self;
-        std.debug.print("Lines to tokenize: {}", .{lines});
+        var tokens = std.mem.tokenize(u8, source, " ");
+        while (tokens.next()) |token| {
+            std.log.info("{s}", .{token});
+        } else {
+            std.log.debug("End of tokens.", .{});
+        }
+    }
+
+    fn handle_error(self: Self, line_num: usize, source: []const u8) void {
+        self.report(line_num, "", source);
+    }
+
+    fn report(self: Self, line_num: usize, where: []const u8, source: []const u8) void {
+        _ = self;
+
+        std.debug.print("[line {d}] Error {s}: {s}", .{
+            line_num,
+            where,
+            source,
+        });
     }
 };
 
@@ -118,6 +145,28 @@ test "run method should parse" {
     defer _ = gpa.deinit();
 
     const lex = Lexer.init(allocator);
-    const lines = ArrayList(u8).init(allocator);
-    try std.testing.expect(@TypeOf(try lex.run(lines)) == void);
+    const source = "asdf 1234 efghi";
+    try std.testing.expect(@TypeOf(try lex.run(source)) == void);
+}
+
+test "error method should return void on success" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const lex = Lexer.init(allocator);
+    const line_num = 1;
+    const source = "asdf 1234 efghi";
+    try std.testing.expect(@TypeOf(lex.handle_error(line_num, source)) == void);
+}
+
+test "report method should return void on success" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const lex = Lexer.init(allocator);
+    const line_num = 1;
+    const source = "asdf 1234 efghi";
+    try std.testing.expect(@TypeOf(lex.report(line_num, "", source)) == void);
 }
