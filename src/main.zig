@@ -1,24 +1,80 @@
 const std = @import("std");
+const Lexer = @import("lexer.zig").Lexer;
+const Allocator = std.mem.Allocator;
+
+const str = []const u8;
+
+pub const ExitStatus = enum(u8) {
+    EX_OK = 0,
+    EX_USAGE = 64,
+    EX_NOINPUT = 66,
+    EX_SOFTWARE = 70,
+};
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
 
-    // stdout is for the actual output of your application, for example if you
-    // are implementing gzip, then only the compressed bytes should be sent to
-    // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    const status = parseArgs(allocator, args) catch |err| switch (err) {
+        else => ExitStatus.EX_SOFTWARE, // Generic internal error
+    };
 
-    try bw.flush(); // don't forget to flush!
+    switch (status) {
+        ExitStatus.EX_USAGE => std.debug.print("Usage: zlox [source file]\n", .{}),
+        ExitStatus.EX_NOINPUT => std.debug.print("File not found: {s}\n", .{args[1]}),
+        ExitStatus.EX_SOFTWARE => std.debug.print("Unknown error occurred!\n", .{}),
+        else => std.log.debug("ExitStatus: {}\n", .{status}),
+    }
+
+    std.process.exit(@intFromEnum(status));
 }
 
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+fn parseArgs(allocator: Allocator, args: []const str) !ExitStatus {
+    const lex = Lexer.init(allocator);
+
+    return switch (args.len) {
+        1 => try lex.runPrompt(),
+        2 => try lex.runFile(args[1]),
+        else => ExitStatus.EX_USAGE,
+    };
+}
+
+test "run prompt" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const args: []const str = &.{"zlox"};
+    try std.testing.expect(try parseArgs(allocator, args) == ExitStatus.EX_OK);
+}
+
+test "run file" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const args: []const str = &.{ "zlox", "src/main.zig" };
+    try std.testing.expect(try parseArgs(allocator, args) == ExitStatus.EX_OK);
+}
+
+test "too many arguments" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const args: []const str = &.{ "zlox", "one", "too_many" };
+    try std.testing.expect(try parseArgs(allocator, args) == ExitStatus.EX_USAGE);
+}
+
+test "file not found" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const args: []const str = &.{ "zlox", "not_found.zlox" };
+    try std.testing.expect(try parseArgs(allocator, args) == ExitStatus.EX_NOINPUT);
 }
