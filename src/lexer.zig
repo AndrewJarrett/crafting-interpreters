@@ -42,7 +42,7 @@ pub const Lexer = struct {
                 try self.run(source);
                 try stdout.print("> ", .{});
             } else {
-                try stdout.print("Goodbye!\n", .{});
+                try stdout.print("\nGoodbye!\n", .{});
                 return ExitStatus.EX_OK;
             }
         } else |err| switch (err) {
