@@ -39,7 +39,9 @@ pub const Lexer = struct {
         var buffer: [1024]u8 = undefined;
         while (input_stream.readUntilDelimiterOrEof(&buffer, '\n')) |line| {
             if (line) |source| {
-                try self.run(source);
+                self.run(source) catch {
+                    continue; // ignore errors and try again
+                };
                 try stdout.print("> ", .{});
             } else {
                 try stdout.print("\nGoodbye!\n", .{});
@@ -68,7 +70,9 @@ pub const Lexer = struct {
         var buffer: [1024]u8 = undefined;
         while (input_stream.readUntilDelimiterOrEof(&buffer, '\n')) |line| {
             if (line) |source| {
-                try self.run(source);
+                self.run(source) catch {
+                    return ExitStatus.EX_DATAERR;
+                };
             } else {
                 return ExitStatus.EX_OK;
             }
@@ -77,7 +81,7 @@ pub const Lexer = struct {
         }
     }
 
-    fn run(self: Self, source: []const u8) !void {
+    fn run(self: Self, source: str) !void {
         _ = self;
         var tokens = std.mem.tokenize(u8, source, " ");
         while (tokens.next()) |token| {
@@ -87,13 +91,12 @@ pub const Lexer = struct {
         }
     }
 
-    fn handle_error(self: Self, line_num: usize, source: []const u8) void {
+    fn handle_error(self: Self, line_num: usize, source: str) void {
         self.report(line_num, "", source);
     }
 
-    fn report(self: Self, line_num: usize, where: []const u8, source: []const u8) void {
+    fn report(self: Self, line_num: usize, where: str, source: str) void {
         _ = self;
-
         std.debug.print("[line {d}] Error {s}: {s}", .{
             line_num,
             where,
