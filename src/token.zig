@@ -3,7 +3,7 @@ const Allocator = std.mem.Allocator;
 
 const str = []const u8;
 
-const TokenType = enum {
+pub const TokenType = enum {
     // Single character tokens
     LEFT_PAREN,
     RIGHT_PAREN,

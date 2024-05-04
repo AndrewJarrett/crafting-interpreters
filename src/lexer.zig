@@ -91,12 +91,11 @@ pub const Lexer = struct {
         }
     }
 
-    fn handle_error(self: Self, line_num: usize, source: str) void {
-        self.report(line_num, "", source);
+    pub fn handle_error(line_num: usize, source: str) void {
+        report(line_num, "", source);
     }
 
-    fn report(self: Self, line_num: usize, where: str, source: str) void {
-        _ = self;
+    fn report(line_num: usize, where: str, source: str) void {
         std.debug.print("[line {d}] Error {s}: {s}", .{
             line_num,
             where,
@@ -153,23 +152,13 @@ test "run method should parse" {
 }
 
 test "error method should return void on success" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    const lex = Lexer.init(allocator);
     const line_num = 1;
     const source = "asdf 1234 efghi";
-    try std.testing.expect(@TypeOf(lex.handle_error(line_num, source)) == void);
+    try std.testing.expect(@TypeOf(Lexer.handle_error(line_num, source)) == void);
 }
 
 test "report method should return void on success" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    const lex = Lexer.init(allocator);
     const line_num = 1;
     const source = "asdf 1234 efghi";
-    try std.testing.expect(@TypeOf(lex.report(line_num, "", source)) == void);
+    try std.testing.expect(@TypeOf(Lexer.report(line_num, "", source)) == void);
 }
