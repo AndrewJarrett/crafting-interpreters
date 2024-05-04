@@ -69,8 +69,27 @@ const Scanner = struct {
             ' ', '\r', '\t' => {},
             '\n' => self.line += 1,
 
+            // Literals
+            '"' => try self.string(),
+
             else => Lexer.handle_error(self.line, "Unexpected character."),
         }
+    }
+
+    fn string(self: *Self) !void {
+        while (self.peek() != '"' and !self.isAtEnd()) : (_ = self.advance()) {
+            if (self.peek() == '\n') self.line += 1;
+        }
+
+        if (self.isAtEnd()) {
+            Lexer.handle_error(self.line, "Unterminated string.");
+        }
+
+        _ = self.advance(); // consume the clsoing '"'
+
+        // Trim the surrounding quotes
+        const value = self.src[(self.start + 1)..(self.current - 1)];
+        try self.addTokenWithLiteral(TT.STRING, value);
     }
 
     fn match(self: *Self, expected: u8) bool {
@@ -98,17 +117,14 @@ const Scanner = struct {
     }
 
     fn addToken(self: *Self, tokenType: TT) !void {
-        //self.addToken(tokenType, null);
+        try self.addTokenWithLiteral(tokenType, null);
+    }
 
+    fn addTokenWithLiteral(self: *Self, tokenType: TT, literal: ?str) !void {
+        _ = literal;
         const text = self.src[self.start..self.current];
         try self.tokens.append(Token.init(self.allocator, tokenType, text, self.line));
     }
-
-    //fn addToken(self: Self, tokenType: TT, literal: ?Object) void {
-    //    _ = literal;
-    //    const text = std.mem.substring(self.src, self.start, self.current);
-    //    self.tokens.append(Token.init(self.allocator, text, self.line));
-    //}
 
     pub fn deinit(self: Self) void {
         for (self.tokens.items) |token| {
@@ -191,4 +207,15 @@ test "isAtEnd" {
     // greater than length
     scanner.current = src.len + 15;
     try std.testing.expect(scanner.isAtEnd() == true);
+}
+
+test "string literal" {
+    const src = "\"this is my source code\"";
+    var scanner = Scanner.init(std.testing.allocator, src);
+    defer scanner.deinit();
+
+    const tokens = try scanner.scanTokens();
+
+    try std.testing.expect(tokens.items.len == 2); // Include EOF
+    try std.testing.expect(std.mem.eql(u8, tokens.items[0].lexeme, src));
 }
