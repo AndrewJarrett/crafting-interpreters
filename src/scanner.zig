@@ -130,6 +130,14 @@ const Scanner = struct {
         return self.src[self.current + 1];
     }
 
+    fn isAlpha(self: Self, char: u8) bool {
+        _ = self;
+        return switch (char) {
+            'a'...'z', 'A'...'Z', '_' => true,
+            else => false,
+        };
+    }
+
     fn isDigit(self: Self, char: u8) bool {
         _ = self;
         return switch (char) {
@@ -321,5 +329,24 @@ test "number" {
         while (scanner.tokens.popOrNull()) |token| {
             try std.testing.expect(token.tokenType != TT.NUMBER);
         }
+    }
+}
+
+test "isAlpha" {
+    const src = "this can be whatever";
+    var scanner = Scanner.init(std.testing.allocator, src);
+    defer scanner.deinit();
+
+    for ('a'..'z') |c| {
+        try std.testing.expect(scanner.isAlpha(@intCast(c)) == true);
+    }
+
+    for ('A'..'Z') |c| {
+        try std.testing.expect(scanner.isAlpha(@intCast(c)) == true);
+    }
+    try std.testing.expect(scanner.isAlpha('_') == true);
+
+    for ("!@#$%^&*()+=-`~./<>{}][;:") |c| {
+        try std.testing.expect(scanner.isAlpha(@intCast(c)) == false);
     }
 }
