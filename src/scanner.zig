@@ -72,8 +72,27 @@ const Scanner = struct {
             // Literals
             '"' => try self.string(),
 
-            else => Lexer.handle_error(self.line, "Unexpected character."),
+            else => {
+                if (self.isDigit(c)) {
+                    try self.number();
+                } else {
+                    Lexer.handle_error(self.line, "Unexpected character.");
+                }
+            },
         }
+    }
+
+    fn number(self: *Self) !void {
+        while (self.isDigit(self.peek())) _ = self.advance();
+
+        if (self.peek() == '.' and self.isDigit(self.peekNext())) {
+            _ = self.advance();
+
+            while (self.isDigit(self.peek())) _ = self.advance();
+        }
+
+        const literal = self.src[self.start..self.current];
+        try self.addTokenWithLiteral(TT.NUMBER, literal);
     }
 
     fn string(self: *Self) !void {
@@ -104,6 +123,19 @@ const Scanner = struct {
     fn peek(self: Self) u8 {
         if (self.isAtEnd()) return '\n';
         return self.src[self.current];
+    }
+
+    fn peekNext(self: Self) u8 {
+        if (self.current + 1 >= self.src.len) return '\n';
+        return self.src[self.current + 1];
+    }
+
+    fn isDigit(self: Self, char: u8) bool {
+        _ = self;
+        return switch (char) {
+            '0'...'9' => true,
+            else => false,
+        };
     }
 
     fn isAtEnd(self: Self) bool {
@@ -218,4 +250,76 @@ test "string literal" {
 
     try std.testing.expect(tokens.items.len == 2); // Include EOF
     try std.testing.expect(std.mem.eql(u8, tokens.items[0].lexeme, src));
+}
+
+test "number literal" {
+    const src = "123";
+    var scanner = Scanner.init(std.testing.allocator, src);
+    defer scanner.deinit();
+
+    const tokens = try scanner.scanTokens();
+
+    try std.testing.expect(tokens.items.len == 2); // Include EOF
+    try std.testing.expect(std.mem.eql(u8, tokens.items[0].lexeme, src));
+}
+
+test "isDigit" {
+    const src = "this can be whatever";
+    var scanner = Scanner.init(std.testing.allocator, src);
+    defer scanner.deinit();
+
+    for ('0'..'9') |c| {
+        try std.testing.expect(scanner.isDigit(@intCast(c)) == true);
+    }
+
+    for ('a'..'z') |c| {
+        try std.testing.expect(scanner.isDigit(@intCast(c)) == false);
+    }
+
+    for ('A'..'Z') |c| {
+        try std.testing.expect(scanner.isDigit(@intCast(c)) == false);
+    }
+
+    for ("!@#$%^&*()_+-=`~") |c| {
+        try std.testing.expect(scanner.isDigit(@intCast(c)) == false);
+    }
+}
+
+test "number" {
+    const areNumbers: [3][]const u8 = .{
+        "123",
+        "123.4",
+        "1",
+    };
+    const notNumbers: [5][]const u8 = .{
+        "+",
+        "-",
+        "a",
+        "/",
+        ".",
+    };
+
+    const src = "this can be whatever";
+    var scanner = Scanner.init(std.testing.allocator, src);
+    defer scanner.deinit();
+
+    for (areNumbers) |num| {
+        scanner.src = num;
+        scanner.current = 0;
+        scanner.start = 0;
+        try scanner.scanToken();
+        const token = scanner.tokens.popOrNull();
+        try std.testing.expect(token != null);
+        try std.testing.expect(std.mem.eql(u8, token.?.lexeme, num));
+        try std.testing.expect(token.?.tokenType == TT.NUMBER);
+    }
+    for (notNumbers) |num| {
+        scanner.src = num;
+        scanner.current = 0;
+        scanner.start = 0;
+        try scanner.scanToken();
+        while (scanner.tokens.popOrNull()) |token| {
+            try std.testing.expect(token.tokenType != TT.NUMBER);
+        }
+    }
 }
