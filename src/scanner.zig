@@ -146,6 +146,10 @@ const Scanner = struct {
         };
     }
 
+    fn isAlphaNumeric(self: Self, char: u8) bool {
+        return self.isAlpha(char) or self.isDigit(char);
+    }
+
     fn isAtEnd(self: Self) bool {
         return self.current >= self.src.len;
     }
@@ -348,5 +352,26 @@ test "isAlpha" {
 
     for ("!@#$%^&*()+=-`~./<>{}][;:") |c| {
         try std.testing.expect(scanner.isAlpha(@intCast(c)) == false);
+    }
+}
+
+test "isAlphaNumeric" {
+    const src = "this can be whatever";
+    var scanner = Scanner.init(std.testing.allocator, src);
+    defer scanner.deinit();
+
+    for ('a'..'z') |c| {
+        try std.testing.expect(scanner.isAlphaNumeric(@intCast(c)) == true);
+    }
+    for ('A'..'Z') |c| {
+        try std.testing.expect(scanner.isAlphaNumeric(@intCast(c)) == true);
+    }
+    for ('0'..'9') |c| {
+        try std.testing.expect(scanner.isAlphaNumeric(@intCast(c)) == true);
+    }
+    try std.testing.expect(scanner.isAlphaNumeric('_') == true);
+
+    for ("!@#$%^&*()+=-`~./<>{}][;:") |c| {
+        try std.testing.expect(scanner.isAlphaNumeric(@intCast(c)) == false);
     }
 }
