@@ -75,11 +75,19 @@ const Scanner = struct {
             else => {
                 if (self.isDigit(c)) {
                     try self.number();
+                } else if (self.isAlphaNumeric(c)) {
+                    try self.identifier();
                 } else {
                     Lexer.handle_error(self.line, "Unexpected character.");
                 }
             },
         }
+    }
+
+    fn identifier(self: *Self) !void {
+        while (self.isAlphaNumeric(self.peek())) _ = self.advance();
+
+        try self.addToken(TT.IDENTIFIER);
     }
 
     fn number(self: *Self) !void {
@@ -373,5 +381,46 @@ test "isAlphaNumeric" {
 
     for ("!@#$%^&*()+=-`~./<>{}][;:") |c| {
         try std.testing.expect(scanner.isAlphaNumeric(@intCast(c)) == false);
+    }
+}
+
+test "identifier" {
+    const areIdentifiers: [5][]const u8 = .{
+        "asdf",
+        "_thisIsValid",
+        "this1isValie2",
+        "_h_e_l_l_o_",
+        "c",
+    };
+    const notIdentifiers: [5][]const u8 = .{
+        "420",
+        "+1234",
+        "-//",
+        "[",
+        ".",
+    };
+
+    const src = "this can be whatever";
+    var scanner = Scanner.init(std.testing.allocator, src);
+    defer scanner.deinit();
+
+    for (areIdentifiers) |iden| {
+        scanner.src = iden;
+        scanner.current = 0;
+        scanner.start = 0;
+        try scanner.scanToken();
+        const token = scanner.tokens.popOrNull();
+        try std.testing.expect(token != null);
+        try std.testing.expect(std.mem.eql(u8, token.?.lexeme, iden));
+        try std.testing.expect(token.?.tokenType == TT.IDENTIFIER);
+    }
+    for (notIdentifiers) |other| {
+        scanner.src = other;
+        scanner.current = 0;
+        scanner.start = 0;
+        try scanner.scanToken();
+        while (scanner.tokens.popOrNull()) |token| {
+            try std.testing.expect(token.tokenType != TT.IDENTIFIER);
+        }
     }
 }
