@@ -8,6 +8,26 @@ const ArrayListAligned = std.array_list.ArrayListAligned;
 const Allocator = std.mem.Allocator;
 const str = []const u8;
 
+// Setup the keywords as a static final hash map
+const keywords = std.ComptimeStringMap(TT, .{
+    .{ "and", TT.AND },
+    .{ "class", TT.CLASS },
+    .{ "else", TT.ELSE },
+    .{ "false", TT.FALSE },
+    .{ "for", TT.FOR },
+    .{ "fun", TT.FUN },
+    .{ "if", TT.IF },
+    .{ "nil", TT.NIL },
+    .{ "or", TT.OR },
+    .{ "print", TT.PRINT },
+    .{ "return", TT.RETURN },
+    .{ "super", TT.SUPER },
+    .{ "this", TT.THIS },
+    .{ "true", TT.TRUE },
+    .{ "var", TT.VAR },
+    .{ "while", TT.WHILE },
+});
+
 const Scanner = struct {
     const Self = @This();
 
@@ -87,7 +107,10 @@ const Scanner = struct {
     fn identifier(self: *Self) !void {
         while (self.isAlphaNumeric(self.peek())) _ = self.advance();
 
-        try self.addToken(TT.IDENTIFIER);
+        const text = self.src[self.start..self.current];
+        const tokenType = if (keywords.get(text)) |keyword| keyword else TT.IDENTIFIER;
+
+        try self.addToken(tokenType);
     }
 
     fn number(self: *Self) !void {
