@@ -28,7 +28,7 @@ const keywords = std.ComptimeStringMap(TT, .{
     .{ "while", TT.WHILE },
 });
 
-const Scanner = struct {
+pub const Scanner = struct {
     const Self = @This();
 
     allocator: Allocator,
@@ -52,7 +52,7 @@ const Scanner = struct {
             try self.scanToken();
         }
 
-        try self.tokens.append(Token.init(self.allocator, TT.EOF, "", self.line));
+        try self.tokens.append(Token.init(TT.EOF, "", self.line));
         return self.tokens;
     }
 
@@ -198,13 +198,10 @@ const Scanner = struct {
     fn addTokenWithLiteral(self: *Self, tokenType: TT, literal: ?str) !void {
         _ = literal;
         const text = self.src[self.start..self.current];
-        try self.tokens.append(Token.init(self.allocator, tokenType, text, self.line));
+        try self.tokens.append(Token.init(tokenType, text, self.line));
     }
 
     pub fn deinit(self: Self) void {
-        for (self.tokens.items) |token| {
-            token.deinit();
-        }
         self.tokens.deinit();
     }
 };

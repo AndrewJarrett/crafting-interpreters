@@ -1,5 +1,4 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 
 const str = []const u8;
 
@@ -56,18 +55,14 @@ pub const TokenType = enum {
 pub const Token = struct {
     const Self = @This();
 
-    allocator: Allocator,
     tokenType: TokenType,
     lexeme: str,
     //literal: anytype,
     line: usize,
 
-    to_string: ?str = null,
-
     //pub fn init(tokenType: TokenType, lexeme: str, literal: anytype, line: usize) Self {
-    pub fn init(allocator: Allocator, tokenType: TokenType, lexeme: str, line: usize) Self {
+    pub fn init(tokenType: TokenType, lexeme: str, line: usize) Self {
         return Self{
-            .allocator = allocator,
             .tokenType = tokenType,
             .lexeme = lexeme,
             //.literal = literal,
@@ -75,28 +70,20 @@ pub const Token = struct {
         };
     }
 
-    pub fn deinit(self: Self) void {
-        if (self.to_string) |to_string| {
-            self.allocator.free(to_string);
-        }
-    }
+    pub fn format(self: Self, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
 
-    pub fn print(self: *Self) ?str {
-        self.to_string = std.fmt.allocPrint(self.allocator, "{s} {s}", .{ @tagName(self.tokenType), self.lexeme }) catch "format failed!"; // add self.literal;
-        return self.to_string;
+        try writer.print("{s} {s}", .{ @tagName(self.tokenType), self.lexeme });
     }
 };
 
 test "init a new token" {
-    const allocator = std.testing.allocator;
-
     const token = Token.init(
-        allocator,
         TokenType.AND,
         "and",
         1,
     );
-    defer token.deinit();
 
     try std.testing.expect(@TypeOf(token) == Token);
     try std.testing.expect(token.tokenType == TokenType.AND);
@@ -105,18 +92,15 @@ test "init a new token" {
 }
 
 test "print the token" {
-    const allocator = std.testing.allocator;
-
-    var token = Token.init(
-        allocator,
+    const token = Token.init(
         TokenType.WHILE,
         "while",
         420, // Take a toke(n)
     );
-    defer token.deinit();
 
-    const token_str = token.print();
+    const expected: str = "WHILE while";
+    var tokenBuffer: [expected.len]u8 = undefined;
 
-    try std.testing.expect(@TypeOf(token.print()) == ?[]const u8);
-    try std.testing.expect(std.mem.eql(u8, token_str.?, "WHILE while") == true);
+    _ = try std.fmt.bufPrint(&tokenBuffer, "{s}", .{token});
+    try std.testing.expect(std.mem.eql(u8, &tokenBuffer, expected));
 }

@@ -4,6 +4,7 @@ const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
 
 const ExitStatus = @import("main.zig").ExitStatus;
+const Scanner = @import("scanner.zig").Scanner;
 
 const str = []const u8;
 
@@ -82,9 +83,11 @@ pub const Lexer = struct {
     }
 
     fn run(self: Self, source: str) !void {
-        _ = self;
-        var tokens = std.mem.tokenize(u8, source, " ");
-        while (tokens.next()) |token| {
+        var scanner = Scanner.init(self.allocator, source);
+        defer scanner.deinit();
+
+        const tokens = try scanner.scanTokens();
+        for (tokens.items) |token| {
             std.log.info("{s}", .{token});
         } else {
             std.log.debug("End of tokens.", .{});
