@@ -51,11 +51,6 @@ const Expr = union(ExprType) {
     }
 };
 
-fn testExprMatchesExpected(comptime expected: str, expr: Expr) bool {
-    var tokenBuffer: [expected.len]u8 = undefined;
-    return std.mem.eql(u8, std.fmt.bufPrint(&tokenBuffer, "{s}", .{expr}) catch "FAILED", expected);
-}
-
 test "Expr: 1" {
     const expr = Expr{ .Literal = Literal{ .value = "1" } };
     try std.testing.expect(testExprMatchesExpected("1", expr));
@@ -69,4 +64,10 @@ test "Expr: (+ 1 2)" {
 test "Expr: (* (- 123) (group 45.67))" {
     const expr = Expr{ .Binary = Binary{ .left = &Expr{ .Unary = .{ .operator = Token.init(TT.MINUS, "-", 1), .right = &Expr{ .Literal = .{ .value = "123" } } } }, .operator = Token.init(TT.STAR, "*", 1), .right = &Expr{ .Grouping = .{ .expression = &Expr{ .Literal = .{ .value = "45.67" } } } } } };
     try std.testing.expect(testExprMatchesExpected("(* (- 123) (group 45.67))", expr));
+}
+
+// Helper method for checking if Expression matches expected string
+fn testExprMatchesExpected(comptime expected: str, expr: Expr) bool {
+    var tokenBuffer: [expected.len]u8 = undefined;
+    return std.mem.eql(u8, std.fmt.bufPrint(&tokenBuffer, "{s}", .{expr}) catch "FAILED", expected);
 }
