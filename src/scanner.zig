@@ -1,6 +1,7 @@
 const std = @import("std");
 const Token = @import("token.zig").Token;
 const TT = @import("token.zig").TokenType;
+const Value = @import("token.zig").Value;
 const Lexer = @import("lexer.zig").Lexer;
 
 const ArrayList = std.ArrayList;
@@ -52,7 +53,7 @@ pub const Scanner = struct {
             try self.scanToken();
         }
 
-        try self.tokens.append(Token.init(TT.EOF, "", self.line));
+        try self.addToken(TT.EOF);
         return self.tokens;
     }
 
@@ -98,7 +99,7 @@ pub const Scanner = struct {
                 } else if (self.isAlphaNumeric(c)) {
                     try self.identifier();
                 } else {
-                    Lexer.handle_error(self.line, "Unexpected character.");
+                    Lexer.handleError(self.line, "Unexpected character.");
                 }
             },
         }
@@ -123,7 +124,7 @@ pub const Scanner = struct {
         }
 
         const literal = self.src[self.start..self.current];
-        try self.addTokenWithLiteral(TT.NUMBER, literal);
+        try self.addTokenWithLiteral(TT.NUMBER, .{ .Number = try std.fmt.parseFloat(f64, literal) });
     }
 
     fn string(self: *Self) !void {
@@ -132,14 +133,14 @@ pub const Scanner = struct {
         }
 
         if (self.isAtEnd()) {
-            Lexer.handle_error(self.line, "Unterminated string.");
+            Lexer.handleError(self.line, "Unterminated string.");
         }
 
         _ = self.advance(); // consume the clsoing '"'
 
         // Trim the surrounding quotes
         const value = self.src[(self.start + 1)..(self.current - 1)];
-        try self.addTokenWithLiteral(TT.STRING, value);
+        try self.addTokenWithLiteral(TT.STRING, .{ .String = value });
     }
 
     fn match(self: *Self, expected: u8) bool {
@@ -195,10 +196,9 @@ pub const Scanner = struct {
         try self.addTokenWithLiteral(tokenType, null);
     }
 
-    fn addTokenWithLiteral(self: *Self, tokenType: TT, literal: ?str) !void {
-        _ = literal;
+    fn addTokenWithLiteral(self: *Self, tokenType: TT, literal: ?Value) !void {
         const text = self.src[self.start..self.current];
-        try self.tokens.append(Token.init(tokenType, text, self.line));
+        try self.tokens.append(Token.init(tokenType, text, literal, self.line));
     }
 
     pub fn deinit(self: Self) void {
