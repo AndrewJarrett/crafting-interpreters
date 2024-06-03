@@ -7,6 +7,7 @@ const ExitStatus = @import("main.zig").ExitStatus;
 const Scanner = @import("scanner.zig").Scanner;
 const Token = @import("token.zig").Token;
 const TT = @import("token.zig").TokenType;
+const Parser = @import("parser.zig").Parser;
 
 const str = []const u8;
 
@@ -87,13 +88,16 @@ pub const Lexer = struct {
     fn run(self: Self, source: str) !void {
         var scanner = Scanner.init(self.allocator, source);
         defer scanner.deinit();
+        std.log.info("Source: {s}", .{source});
 
         const tokens = try scanner.scanTokens();
-        for (tokens.items) |token| {
-            std.log.info("{s}", .{token});
-        } else {
-            std.log.debug("End of tokens.", .{});
-        }
+        std.log.info("Tokens: {s}", .{tokens.items});
+        var parser = Parser.init(self.allocator, tokens);
+        defer parser.deinit();
+        const expr = try parser.parse();
+
+        std.log.info("Before expr.", .{});
+        std.log.info("Expr: {s}", .{expr});
     }
 
     pub fn handleError(line_num: usize, source: str) void {

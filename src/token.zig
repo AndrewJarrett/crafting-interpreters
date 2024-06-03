@@ -50,21 +50,13 @@ pub const TokenType = enum {
     WHILE,
 
     EOF,
+
+    pub fn format(self: TokenType, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("{s}", .{@tagName(self)});
+    }
 };
-
-pub fn Literal(comptime T: type) type {
-    const Self = @This();
-
-    return struct {
-        val: T,
-
-        pub fn init(val: T) Self {
-            return Self{
-                .val = val,
-            };
-        }
-    };
-}
 
 pub const Value = union(enum) {
     Bool: bool,
@@ -133,6 +125,36 @@ test "print the token" {
     );
 
     const expected: str = "WHILE while null";
+    var tokenBuffer: [expected.len]u8 = undefined;
+
+    _ = try std.fmt.bufPrint(&tokenBuffer, "{s}", .{token});
+    try std.testing.expect(std.mem.eql(u8, &tokenBuffer, expected));
+}
+
+test "print a number" {
+    const token = Token.init(
+        TokenType.NUMBER,
+        "1",
+        Value{ .Number = @as(f64, 1) },
+        2,
+    );
+
+    const expected: str = "NUMBER 1 1";
+    var tokenBuffer: [expected.len]u8 = undefined;
+
+    _ = try std.fmt.bufPrint(&tokenBuffer, "{s}", .{token});
+    try std.testing.expect(std.mem.eql(u8, &tokenBuffer, expected));
+}
+
+test "print a string" {
+    const token = Token.init(
+        TokenType.STRING,
+        "this is a string",
+        Value{ .String = "this is a string" },
+        3,
+    );
+
+    const expected: str = "STRING this is a string this is a string";
     var tokenBuffer: [expected.len]u8 = undefined;
 
     _ = try std.fmt.bufPrint(&tokenBuffer, "{s}", .{token});

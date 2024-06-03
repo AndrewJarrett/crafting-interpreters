@@ -197,7 +197,11 @@ pub const Scanner = struct {
     }
 
     fn addTokenWithLiteral(self: *Self, tokenType: TT, literal: ?Value) !void {
-        const text = self.src[self.start..self.current];
+        var text: []const u8 = "";
+        if (!self.isAtEnd()) {
+            text = self.src[self.start..self.current];
+        }
+        std.log.info("TokenType: {s}; Len: {d}; Start: {d}; Current: {d}; Text: {s}", .{tokenType, self.src.len, self.start, self.current, text});
         try self.tokens.append(Token.init(tokenType, text, literal, self.line));
     }
 
@@ -252,6 +256,8 @@ test "scanToken" {
     try std.testing.expect(scanner.current == 2);
 
     try std.testing.expect(scanner.tokens.items.len == 2);
+    std.debug.print("**** items[0]: {s}", .{scanner.tokens.items[0].lexeme});
+    std.debug.print("**** items[1]: {s}", .{scanner.tokens.items[1].lexeme});
     try std.testing.expect(std.mem.eql(u8, scanner.tokens.items[0].lexeme, "("));
     try std.testing.expect(std.mem.eql(u8, scanner.tokens.items[1].lexeme, ")"));
 }
