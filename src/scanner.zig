@@ -198,7 +198,7 @@ pub const Scanner = struct {
 
     fn addTokenWithLiteral(self: *Self, tokenType: TT, literal: ?Value) !void {
         var text: []const u8 = "";
-        if (!self.isAtEnd()) {
+        if (self.current <= self.src.len) {
             text = self.src[self.start..self.current];
         }
         std.log.info("TokenType: {s}; Len: {d}; Start: {d}; Current: {d}; Text: {s}", .{tokenType, self.src.len, self.start, self.current, text});
@@ -231,11 +231,11 @@ test "scanTokens" {
     const tokens = try scanner.scanTokens();
 
     try std.testing.expect(tokens.items.len > 0);
+    try std.testing.expect(tokens.items.len == 6);
 
-    //for (scanner.tokens.items) |token| {
-    //    std.debug.print("{s}", .{token});
-    //    try std.testing.expect(std.mem.eql(u8, token, undefined));
-    //}
+    for (scanner.tokens.items) |token| {
+        try std.testing.expect(token.tokenType == TT.THIS or token.tokenType == TT.IDENTIFIER or token.tokenType == TT.EOF);
+    }
 }
 
 test "scanToken" {
@@ -256,8 +256,6 @@ test "scanToken" {
     try std.testing.expect(scanner.current == 2);
 
     try std.testing.expect(scanner.tokens.items.len == 2);
-    std.debug.print("**** items[0]: {s}", .{scanner.tokens.items[0].lexeme});
-    std.debug.print("**** items[1]: {s}", .{scanner.tokens.items[1].lexeme});
     try std.testing.expect(std.mem.eql(u8, scanner.tokens.items[0].lexeme, "("));
     try std.testing.expect(std.mem.eql(u8, scanner.tokens.items[1].lexeme, ")"));
 }

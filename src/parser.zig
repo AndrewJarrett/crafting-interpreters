@@ -98,14 +98,7 @@ const Expr = union(ExprType) {
     pub fn format(self: *const Expr, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
-        //try writer.print("{*}", .{self});
 
-        //switch (self.*) {
-        //    .Binary => try writer.print("BINARY", .{}),
-        //    .Unary => try writer.print("UNARY", .{}),
-        //    .Literal => try writer.print("LITERAL", .{}),
-        //    .Grouping => try writer.print("GROUPING", .{}),
-        //}
         switch (self.*) {
             .Binary => |b| try writer.print("({s} {s} {s})", .{ b.operator.lexeme, b.left.*, b.right.* }),
             .Unary => |u| try writer.print("({s} {s})", .{ u.operator.lexeme, u.right.* }),
@@ -201,10 +194,7 @@ pub const Parser = struct {
             std.log.info("Right: {s}", .{right});
             std.log.info("Current: {d}", .{self.current});
             std.log.info("Peek: {s}", .{self.peek()});
-            const termExpr = self.createExpr(Binary{ .left = expr, .operator = operator, .right = right});
-            //const termExpr = self.createExpr(Expr.initBinary(operator, expr, right));
-            //std.log.info("Expr2: {}", .{termExpr});
-            return termExpr;
+            return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right});
         }
 
         return expr;
@@ -229,9 +219,7 @@ pub const Parser = struct {
             return self.createExpr(Unary{ .operator = operator, .right = right});
         }
 
-        const expr = try self.primary();
-        //std.log.info("Unary expr: {s}", .{expr});
-        return expr;
+        return try self.primary();
     }
 
     fn primary(self: *Parser) ParseError!*Expr {
@@ -240,10 +228,7 @@ pub const Parser = struct {
         if (self.match(.{TT.NIL})) return self.createExpr(Literal{ .value = Value{ .Nil = {} }});
 
         if (self.match(.{ TT.NUMBER, TT.STRING })) {
-            const expr = self.createExpr(Literal{ .value = self.previous().literal });
-            //std.log.info("Num/String: {s}", .{expr});
-            //std.log.info("Self.previous: {?}", .{self.previous().literal});
-            return expr;
+            return self.createExpr(Literal{ .value = self.previous().literal });
         }
 
         if (self.match(.{TT.LEFT_PAREN})) {
@@ -364,7 +349,6 @@ test "Parser success" {
     var parser = Parser.init(std.testing.allocator, tokens);
     defer parser.deinit();
     const expr = try parser.parse();
-    //std.log.info("Test: {s}", .{expr});
     const expected: str = "(+ 1 1)";
     try std.testing.expect(testExprMatchesExpected(expected, expr));
 }
