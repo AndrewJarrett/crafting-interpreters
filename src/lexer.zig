@@ -5,6 +5,9 @@ const Allocator = std.mem.Allocator;
 
 const ExitStatus = @import("main.zig").ExitStatus;
 const Scanner = @import("scanner.zig").Scanner;
+const Token = @import("token.zig").Token;
+const TT = @import("token.zig").TokenType;
+const Parser = @import("parser.zig").Parser;
 
 const str = []const u8;
 
@@ -87,15 +90,27 @@ pub const Lexer = struct {
         defer scanner.deinit();
 
         const tokens = try scanner.scanTokens();
-        for (tokens.items) |token| {
-            std.log.info("{s}", .{token});
-        } else {
-            std.log.debug("End of tokens.", .{});
-        }
+        std.log.info("Tokens: {s}", .{tokens.items});
+        var parser = Parser.init(self.allocator, tokens);
+        defer parser.deinit();
+        const expr = try parser.parse();
+        std.log.info("Expr: {s}", .{expr});
     }
 
-    pub fn handle_error(line_num: usize, source: str) void {
+    pub fn handleError(line_num: usize, source: str) void {
         report(line_num, "", source);
+    }
+
+    pub fn handleTokenError(token: Token, msg: str) void {
+        if (token.tokenType == TT.EOF) {
+            report(token.line, " at end", msg);
+        } else {
+            var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+            defer arena.deinit();
+
+            const where: str = std.fmt.allocPrint(arena.allocator(), " at '{s}'", .{token.lexeme}) catch unreachable;
+            report(token.line, where, msg);
+        }
     }
 
     fn report(line_num: usize, where: str, source: str) void {
@@ -157,7 +172,7 @@ test "run method should parse" {
 test "error method should return void on success" {
     const line_num = 1;
     const source = "asdf 1234 efghi";
-    try std.testing.expect(@TypeOf(Lexer.handle_error(line_num, source)) == void);
+    try std.testing.expect(@TypeOf(Lexer.handleError(line_num, source)) == void);
 }
 
 test "report method should return void on success" {
