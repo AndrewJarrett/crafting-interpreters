@@ -201,7 +201,7 @@ pub const Scanner = struct {
         if (tokenType != TT.EOF and self.current <= self.src.len) {
             text = self.src[self.start..self.current];
         }
-        std.log.info("TokenType: {s}; Len: {d}; Start: {d}; Current: {d}; Text: {d}", .{tokenType, self.src.len, self.start, self.current, text});
+        //std.log.info("TokenType: {s}; Len: {d}; Start: {d}; Current: {d}; Text: {d}", .{tokenType, self.src.len, self.start, self.current, text});
         try self.tokens.append(Token.init(tokenType, text, literal, self.line));
     }
 

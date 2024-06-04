@@ -88,7 +88,6 @@ pub const Lexer = struct {
     fn run(self: Self, source: str) !void {
         var scanner = Scanner.init(self.allocator, source);
         defer scanner.deinit();
-        std.log.info("Source: {s}", .{source});
 
         const tokens = try scanner.scanTokens();
         std.log.info("Tokens: {s}", .{tokens.items});
