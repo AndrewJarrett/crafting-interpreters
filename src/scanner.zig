@@ -198,7 +198,7 @@ pub const Scanner = struct {
 
     fn addTokenWithLiteral(self: *Self, tokenType: TT, literal: ?Value) !void {
         var text: []const u8 = "";
-        if (self.current <= self.src.len) {
+        if (tokenType != TT.EOF and self.current <= self.src.len) {
             text = self.src[self.start..self.current];
         }
         std.log.info("TokenType: {s}; Len: {d}; Start: {d}; Current: {d}; Text: {d}", .{tokenType, self.src.len, self.start, self.current, text});
