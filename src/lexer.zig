@@ -95,8 +95,6 @@ pub const Lexer = struct {
         var parser = Parser.init(self.allocator, tokens);
         defer parser.deinit();
         const expr = try parser.parse();
-
-        std.log.info("Before expr.", .{});
         std.log.info("Expr: {s}", .{expr});
     }
 

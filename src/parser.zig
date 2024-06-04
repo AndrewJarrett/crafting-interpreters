@@ -160,7 +160,6 @@ pub const Parser = struct {
             return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right});
         }
 
-        std.log.info("Equality: {s}", .{expr});
         return expr;
     }
 
@@ -175,9 +174,6 @@ pub const Parser = struct {
             return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right});
         }
 
-        std.log.info("Comparison: ", .{});
-        std.log.info("Comparison: {}", .{expr});
-        std.log.info("Comparison: {s}", .{expr});
         return expr;
     }
 
@@ -186,14 +182,7 @@ pub const Parser = struct {
 
         while (self.match(.{ TT.MINUS, TT.PLUS })) {
             const operator: Token = self.previous();
-            std.log.info("Operator: {s}", .{operator});
-            std.log.info("Expr before: {s}", .{expr});
-            std.log.info("Current: {d}", .{self.current});
-            std.log.info("Peek: {s}", .{self.peek()});
             const right = try self.factor();
-            std.log.info("Right: {s}", .{right});
-            std.log.info("Current: {d}", .{self.current});
-            std.log.info("Peek: {s}", .{self.peek()});
             return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right});
         }
 
