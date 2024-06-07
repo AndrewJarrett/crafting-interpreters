@@ -64,6 +64,38 @@ pub const Value = union(enum) {
     Number: f64,
     String: str,
 
+    pub fn isBool(self: Value) bool {
+        return self == .Bool;
+    }
+
+    pub fn asBool(self: Value) !bool {
+        return if (self.isBool()) self.Bool else ValueError.NotABool;
+    }
+
+    pub fn isNil(self: Value) bool {
+        return self == .Nil;
+    }
+
+    pub fn asNil(self: Value) !void {
+        return if (self.isNil()) self.Nil else ValueError.NotNil;
+    }
+
+    pub fn isNumber(self: Value) bool {
+        return self == .Number;
+    }
+
+    pub fn asNumber(self: Value) !f64 {
+        return if (self.isNumber()) self.Number else ValueError.NotANumber;
+    }
+
+    pub fn isString(self: Value) bool {
+        return self == .String;
+    }
+
+    pub fn asString(self: Value) !str {
+        return if (self.isString()) self.String else ValueError.NotAString;
+    }
+
     pub fn format(self: Value, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
@@ -74,6 +106,13 @@ pub const Value = union(enum) {
             .String => |s| try writer.print("{s}", .{s}),
         }
     }
+};
+
+pub const ValueError = error {
+    NotABool,
+    NotNil,
+    NotANumber,
+    NotAString,
 };
 
 pub const Token = struct {
@@ -159,4 +198,47 @@ test "print a string" {
 
     _ = try std.fmt.bufPrint(&tokenBuffer, "{s}", .{token});
     try std.testing.expect(std.mem.eql(u8, &tokenBuffer, expected));
+}
+
+test "value bool" {
+    const boolTrue = Value { .Bool = true };
+    const boolFalse = Value { .Bool = false };
+    const notBool = Value { .Number = 3 };
+
+    try std.testing.expect(boolTrue.isBool());
+    try std.testing.expect(try boolTrue.asBool());
+    try std.testing.expect(boolFalse.isBool());
+    try std.testing.expect(try boolFalse.asBool() == false);
+    try std.testing.expect(notBool.isBool() == false);
+    try std.testing.expectError(ValueError.NotABool, notBool.asBool());
+}
+
+test "value nil" {
+    const nil = Value { .Nil = {} };
+    const notNil = Value { .Number = 3 };
+
+    try std.testing.expect(nil.isNil());
+    try std.testing.expect(try nil.asNil() == {});
+    try std.testing.expect(notNil.isNil() == false);
+    try std.testing.expectError(ValueError.NotNil, notNil.asNil());
+}
+
+test "value number" {
+    const num = Value { .Number = 42 };
+    const NaN = Value { .Bool = false };
+
+    try std.testing.expect(num.isNumber());
+    try std.testing.expect(try num.asNumber() == @as(f64, 42));
+    try std.testing.expect(NaN.isNumber() == false);
+    try std.testing.expectError(ValueError.NotANumber, NaN.asNumber());
+}
+
+test "value string" {
+    const string = Value { .String = "this is cool yo" };
+    const notString = Value { .Number = 3 };
+
+    try std.testing.expect(string.isString());
+    try std.testing.expect(std.mem.eql(u8, try string.asString(), "this is cool yo"));
+    try std.testing.expect(notString.isString() == false);
+    try std.testing.expectError(ValueError.NotAString, notString.asString());
 }

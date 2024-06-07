@@ -47,33 +47,33 @@ const Type = @Type(.{
     },
 });
 
-const Binary = struct {
+pub const Binary = struct {
     left: *const Expr,
     operator: Token,
     right: *const Expr,
 };
 
-const Unary = struct {
+pub const Unary = struct {
     operator: Token,
     right: *const Expr,
 };
 
-const Literal = struct {
+pub const Literal = struct {
     value: ?Value = null,
 };
 
-const Grouping = struct {
+pub const Grouping = struct {
     expression: *const Expr,
 };
 
-const ExprType = enum {
+pub const ExprType = enum {
     Binary,
     Unary,
     Literal,
     Grouping,
 };
 
-const Expr = union(ExprType) {
+pub const Expr = union(ExprType) {
     Binary: Binary,
     Unary: Unary,
     Literal: Literal,
@@ -95,6 +95,74 @@ const Expr = union(ExprType) {
         return Expr { .Grouping = Grouping{ .expression = expression }};
     }
 
+    pub fn evaluate(self: Expr) !Value {
+        return switch (self) {
+            .Binary => try self.evaluateBinary(),
+            .Unary => try self.evaluateUnary(),
+            .Literal => self.evaluateLiteral(),
+            .Grouping => self.evaluateGrouping(),
+        };
+    }
+
+    fn evaluateBinary(self: Expr) !Value {
+        const left = try self.evaluate(self.Binary.left);
+        const right = try self.evaluate(self.Binary.right);
+
+        return switch (self.Binary.operator.tokenType) {
+            .GREATER => try left.asNumber() > try right.asNumber(),
+            .GREATER_EQUAL => try left.asNumber() >= try right.asNumber(),
+            .LESS => try left.asNumber() < try right.asNumber(),
+            .LESS_EQUAL => try left.asNumber() <= try right.asNumber(),
+            .GREATER => try left.asNumber() > try right.asNumber(),
+            .MINUS => try left.asNumber() - try right.asNumber(),
+            .PLUS => if (left.isNumber() and right.isNumber()) {
+                try left.asNumber() + try right.asNumber();
+            } else {
+                try left.asString() + try right.asString();
+            },
+            .SLASH => try left.asNumber() / try right.asNumber(),
+            .STAR => try left.asNumber() * try right.asNumber(),
+            .BANG_EQUAL => !self.isEqual(left, right),
+            .EQUAL_EQUAL => self.isEqual(left, right),
+            else => EvaluateError.UnexpectedOperator,
+        };
+    }
+
+    fn evaluateUnary(self: Expr) !Value {
+        const right = try self.evaluate(self.Unary.right);
+
+        return switch (self.Unary.operator.tokenType) {
+            .BANG => !self.isTruthy(right),
+            .MINUS => -(try right.asNumber()),
+            else => EvaluateError.UnexpectedOperator,
+        };
+    }
+
+    fn evaluateLiteral(self: Expr) Value {
+        return self.Literal.value.?;
+    }
+
+    fn evaluateGrouping(self: Expr) !Value {
+        return try self.evaluate(self.Grouping.expression);
+    }
+
+    fn isTruthy(self: Expr, val: Value) bool {
+        _ = self;
+
+        return switch (val) {
+            .Nil => false,
+            .Bool => val.?,
+            else => true,
+        };
+    }
+
+    fn isEqual(self: Expr, left: Value, right: Value) bool {
+        _ = self;
+        _ = left;
+        _ = right;
+        return false;
+    }
+
     pub fn format(self: *const Expr, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
@@ -106,6 +174,12 @@ const Expr = union(ExprType) {
             .Grouping => |g| try writer.print("(group {s})", .{g.expression}),
         }
     }
+};
+
+pub const EvaluateError = error {
+    ExpectedLiteral,
+    ExpectedNumber,
+    UnexpectedOperator,
 };
 
 pub const Parser = struct {
