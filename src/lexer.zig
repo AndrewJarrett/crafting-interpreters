@@ -113,6 +113,10 @@ pub const Lexer = struct {
         }
     }
 
+    pub fn handleRuntimeError(token: Token, msg: str) void {
+        std.debug.print("{s}\n[line {d}]", .{msg, token.line});
+    }
+
     fn report(line_num: usize, where: str, source: str) void {
         std.debug.print("[line {d}] Error {s}: {s}", .{
             line_num,

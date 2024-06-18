@@ -1,8 +1,11 @@
 const std = @import("std");
 const Token = @import("token.zig").Token;
+const Nil = @import("token.zig").Nil;
 const Value = @import("token.zig").Value;
 const Lexer = @import("lexer.zig").Lexer;
 const TT = @import("token.zig").TokenType;
+const VT = @import("token.zig").ValueType;
+const Interpreter = @import("interpreter.zig").Interpreter;
 
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
@@ -51,116 +54,215 @@ pub const Binary = struct {
     left: *const Expr,
     operator: Token,
     right: *const Expr,
+
+    fn evaluate(self: Binary, interp: Interpreter) ResultError!Result(Value) {
+        const left = try (try self.left.evaluate(interp)).unwrap();
+        const right = try (try self.right.evaluate(interp)).unwrap();
+
+        return switch (self.operator.tokenType) {
+            .GREATER => self.getNumberResult(left, right),
+            .GREATER_EQUAL => self.getNumberResult(left, right),
+            .LESS => self.getNumberResult(left, right),
+            .LESS_EQUAL => self.getNumberResult(left, right),
+            .MINUS => self.getNumberResult(left, right),
+            .PLUS => if (left.isNumber() and right.isNumber()) {
+                return self.getNumberResult(left, right);
+            } else {
+                return self.getStringResult(left, right);
+            },
+            .SLASH => self.getNumberResult(left, right),
+            .STAR => self.getNumberResult(left, right),
+            .BANG_EQUAL => Result(Value).ok(.{ .Bool = left.isNotEqual(right) }),
+            .EQUAL_EQUAL => Result(Value).ok(.{ .Bool = left.isEqual(right) }),
+            else => Result(Value).err(Error{ .token = self.operator, .message = "Unexpected operator for a binary expression" }),
+        };
+    }
+
+    pub fn getNumberResult(self: Binary, left: Value, right: Value) Result(Value) {
+        if (left.isNumber() and right.isNumber()) {
+            const l = left.asNumber() catch unreachable;
+            const r = right.asNumber() catch unreachable;
+
+            return switch (self.operator.tokenType) {
+                .GREATER => Result(Value).ok(.{ .Bool = l > r }),
+                .GREATER_EQUAL => Result(Value).ok(.{ .Bool = l >= r }),
+                .LESS => Result(Value).ok(.{ .Bool = l < r }),
+                .LESS_EQUAL => Result(Value).ok(.{ .Bool = (l <= r) }),
+                .MINUS => Result(Value).ok(.{ .Number = l - r }),
+                .PLUS => Result(Value).ok(.{ .Number = l + r }),
+                .SLASH => Result(Value).ok(.{ .Number = l / r }),
+                .STAR => Result(Value).ok(.{ .Number = l * r }),
+                else => Result(Value).err(Error.init(self.operator, "Unexpected operator for a binary expression with two numbers")),
+            };
+        } else {
+            return Result(Value).err(Error.init(self.operator, "Operator expects two numbers"));
+        }
+    }
+
+    pub fn getStringResult(self: Binary, left: Value, right: Value) Result(Value) {
+        if (left.isString() and right.isString()) {
+            const l = left.asString() catch unreachable;
+            const r = right.asString() catch unreachable;
+
+            return switch (self.operator.tokenType) {
+                .PLUS => {
+                    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+                    defer arena.deinit();
+
+                    const result = std.fmt.allocPrint(arena.allocator(), "{s}{s}", .{l, r}) catch {
+                        return Result(Value).err(Error.init(self.operator, "Error allocating space for concatenated string"));
+                    };
+                    return Result(Value).ok(.{ .String = result });
+                },
+                else => Result(Value).err(Error.init(self.operator, "Unexpected operator for a binary expression with two strings")),
+            };
+        } else {
+            return Result(Value).err(Error.init(self.operator, "Operator expects two strings"));
+        }
+    }
 };
 
 pub const Unary = struct {
     operator: Token,
     right: *const Expr,
+
+    fn evaluate(self: Unary, interp: Interpreter) ResultError!Result(Value) {
+        const right = try (try self.right.evaluate(interp)).unwrap();
+
+        return switch (self.operator.tokenType) {
+            .BANG => Result(Value).ok(.{ .Bool = !right.isTruthy() }),
+            .MINUS => self.getNumberResult(right),
+            else => Result(Value).err(Error.init(self.operator, "Unexpected operator for a unary expression")),
+        };
+    }
+
+    pub fn getNumberResult(self: Unary, right: Value) Result(Value) {
+        if (right.isNumber()) {
+            const r = right.asNumber() catch unreachable;
+
+            return switch (self.operator.tokenType) {
+                .MINUS => Result(Value).ok(.{ .Number = -(r) }),
+                else => Result(Value).err(Error.init(self.operator, "Unexpected unary operator for a number")),
+            };
+        } else {
+            const err = Error.init(self.operator, "Operator expects a number");
+            return Result(Value).err(err);
+        }
+    }
 };
 
 pub const Literal = struct {
     value: ?Value = null,
+
+    fn evaluate(self: Literal, interp: Interpreter) Result(Value) {
+        _ = interp;
+        if (self.value) |value| {
+            return Result(Value).ok(value);
+        } else {
+            return Result(Value).err(Error{ .token = null, .message = "The literal value was null." });
+        }
+    }
 };
 
 pub const Grouping = struct {
     expression: *const Expr,
+
+    fn evaluate(self: Grouping, interp: Interpreter) ResultError!Result(Value) {
+        return try self.expression.evaluate(interp);
+    }
 };
 
-pub const ExprType = enum {
-    Binary,
-    Unary,
-    Literal,
-    Grouping,
+pub fn Result(comptime T: type) type {
+    return union(enum) {
+        const Self = @This();
+
+        ok: T,
+        err: Error,
+
+        pub fn ok(payload: T) Self {
+            return Self {
+                .ok = payload,
+            };
+        }
+
+        pub fn err(payload: Error) Self {
+            return Self {
+                .err = payload,
+            };
+        }
+
+        pub fn unwrap(self: Self) ResultError!T {
+            switch (self) {
+                .ok => |okay| return okay,
+                .err => return ResultError.UnwrapError,
+            }
+        }
+
+        pub fn deinit(self: Self) void {
+            switch (self) {
+                .err => {},
+                .ok => |value| {
+                    if (comptime std.meta.hasFn("deinit")(T)) {
+                        value.deinit();
+                    }
+                }
+            }
+        }
+    };
+}
+
+pub const ResultError = error {
+    UnwrapError,
 };
 
-pub const Expr = union(ExprType) {
+pub const Error = struct {
+    token: ?Token,
+    message: str,
+
+    pub fn init(token: ?Token, message: str) Error {
+        return Error{
+            .token = token,
+            .message = message,
+        };
+    }
+
+    pub fn format(self: Error, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print("({?} {s}", .{ self.token, self.message });
+    }
+};
+
+pub const Expr = union(enum) {
     Binary: Binary,
     Unary: Unary,
     Literal: Literal,
     Grouping: Grouping,
 
     pub fn initBinary(left: *Expr, operator: Token, right: *Expr) Expr {
-        return Expr { .Binary = Binary{ .left = left, .operator = operator, .right = right }};
+        return Expr{ .Binary = Binary{ .left = left, .operator = operator, .right = right } };
     }
 
     pub fn initUnary(operator: Token, right: *Expr) Expr {
-        return Expr { .Unary = Unary{ .operator = operator, .right = right }};
+        return Expr{ .Unary = Unary{ .operator = operator, .right = right } };
     }
 
     pub fn initLiteral(value: ?Value) Expr {
-        return Expr { .Literal = Literal{ .value = value }};
+        return Expr{ .Literal = Literal{ .value = value } };
     }
 
     pub fn initGrouping(expression: *Expr) Expr {
-        return Expr { .Grouping = Grouping{ .expression = expression }};
+        return Expr{ .Grouping = Grouping{ .expression = expression } };
     }
 
-    pub fn evaluate(self: Expr) !Value {
+    pub fn evaluate(self: Expr, interp: Interpreter) ResultError!Result(Value) {
         return switch (self) {
-            .Binary => try self.evaluateBinary(),
-            .Unary => try self.evaluateUnary(),
-            .Literal => self.evaluateLiteral(),
-            .Grouping => self.evaluateGrouping(),
+            .Binary => try self.Binary.evaluate(interp),
+            .Unary => try self.Unary.evaluate(interp),
+            .Literal => self.Literal.evaluate(interp),
+            .Grouping => try self.Grouping.evaluate(interp),
         };
-    }
-
-    fn evaluateBinary(self: Expr) !Value {
-        const left = try self.evaluate(self.Binary.left);
-        const right = try self.evaluate(self.Binary.right);
-
-        return switch (self.Binary.operator.tokenType) {
-            .GREATER => try left.asNumber() > try right.asNumber(),
-            .GREATER_EQUAL => try left.asNumber() >= try right.asNumber(),
-            .LESS => try left.asNumber() < try right.asNumber(),
-            .LESS_EQUAL => try left.asNumber() <= try right.asNumber(),
-            .GREATER => try left.asNumber() > try right.asNumber(),
-            .MINUS => try left.asNumber() - try right.asNumber(),
-            .PLUS => if (left.isNumber() and right.isNumber()) {
-                try left.asNumber() + try right.asNumber();
-            } else {
-                try left.asString() + try right.asString();
-            },
-            .SLASH => try left.asNumber() / try right.asNumber(),
-            .STAR => try left.asNumber() * try right.asNumber(),
-            .BANG_EQUAL => !self.isEqual(left, right),
-            .EQUAL_EQUAL => self.isEqual(left, right),
-            else => EvaluateError.UnexpectedOperator,
-        };
-    }
-
-    fn evaluateUnary(self: Expr) !Value {
-        const right = try self.evaluate(self.Unary.right);
-
-        return switch (self.Unary.operator.tokenType) {
-            .BANG => !self.isTruthy(right),
-            .MINUS => -(try right.asNumber()),
-            else => EvaluateError.UnexpectedOperator,
-        };
-    }
-
-    fn evaluateLiteral(self: Expr) Value {
-        return self.Literal.value.?;
-    }
-
-    fn evaluateGrouping(self: Expr) !Value {
-        return try self.evaluate(self.Grouping.expression);
-    }
-
-    fn isTruthy(self: Expr, val: Value) bool {
-        _ = self;
-
-        return switch (val) {
-            .Nil => false,
-            .Bool => val.?,
-            else => true,
-        };
-    }
-
-    fn isEqual(self: Expr, left: Value, right: Value) bool {
-        _ = self;
-        _ = left;
-        _ = right;
-        return false;
     }
 
     pub fn format(self: *const Expr, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -231,7 +333,7 @@ pub const Parser = struct {
         while (self.match(.{ TT.BANG_EQUAL, TT.EQUAL_EQUAL })) {
             const operator: Token = self.previous();
             const right = try self.comparison();
-            return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right});
+            return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right });
         }
 
         return expr;
@@ -245,7 +347,7 @@ pub const Parser = struct {
         })) {
             const operator: Token = self.previous();
             const right = try self.term();
-            return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right});
+            return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right });
         }
 
         return expr;
@@ -257,7 +359,7 @@ pub const Parser = struct {
         while (self.match(.{ TT.MINUS, TT.PLUS })) {
             const operator: Token = self.previous();
             const right = try self.factor();
-            return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right});
+            return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right });
         }
 
         return expr;
@@ -269,7 +371,7 @@ pub const Parser = struct {
         while (self.match(.{ TT.SLASH, TT.STAR })) {
             const operator: Token = self.previous();
             const right = try self.unary();
-            return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right});
+            return self.createExpr(Binary{ .left = expr, .operator = operator, .right = right });
         }
 
         return expr;
@@ -279,16 +381,16 @@ pub const Parser = struct {
         if (self.match(.{ TT.BANG, TT.MINUS })) {
             const operator: Token = self.previous();
             const right: *const Expr = try self.unary();
-            return self.createExpr(Unary{ .operator = operator, .right = right});
+            return self.createExpr(Unary{ .operator = operator, .right = right });
         }
 
         return try self.primary();
     }
 
     fn primary(self: *Parser) ParseError!*Expr {
-        if (self.match(.{TT.FALSE})) return self.createExpr(Literal{ .value = Value{ .Bool = false }});
-        if (self.match(.{TT.TRUE})) return self.createExpr(Literal{ .value = Value{ .Bool = true }});
-        if (self.match(.{TT.NIL})) return self.createExpr(Literal{ .value = Value{ .Nil = {} }});
+        if (self.match(.{TT.FALSE})) return self.createExpr(Literal{ .value = .{ .Bool = false } });
+        if (self.match(.{TT.TRUE})) return self.createExpr(Literal{ .value = .{ .Bool = true } });
+        if (self.match(.{TT.NIL})) return self.createExpr(Literal{ .value = .{ .Nil = { } }});
 
         if (self.match(.{ TT.NUMBER, TT.STRING })) {
             return self.createExpr(Literal{ .value = self.previous().literal });
@@ -404,9 +506,9 @@ test "Parse error no expression" {
 test "Parser success" {
     var tokens = ArrayList(Token).init(std.testing.allocator);
     defer tokens.deinit();
-    try tokens.append(Token.init(TT.NUMBER, "1", Value{ .Number = 1.0 }, 1));
+    try tokens.append(Token.init(TT.NUMBER, "1", .{ .Number = 1.0 }, 1));
     try tokens.append(Token.init(TT.PLUS, "+", null, 1));
-    try tokens.append(Token.init(TT.NUMBER, "1", Value{ .Number = 1.0 }, 1));
+    try tokens.append(Token.init(TT.NUMBER, "1", .{ .Number = 1.0 }, 1));
     try tokens.append(Token.init(TT.EOF, "", null, 1));
 
     var parser = Parser.init(std.testing.allocator, tokens);
