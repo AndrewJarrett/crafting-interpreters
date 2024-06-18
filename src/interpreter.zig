@@ -129,3 +129,13 @@ test "interpret equality operators" {
     try std.testing.expect(try (try Interpreter.init(oneEqTwo).interpret()).asBool() == false);
     try std.testing.expect(try (try Interpreter.init(twoEqOne).interpret()).asBool() == false);
 }
+
+test "interpret string concat" {
+    const concat = Token.init(TT.PLUS, "+", null, 1);
+    const one = .{ .Literal = .{ .value = .{ .String = "one"}}};
+    const two = .{ .Literal = .{ .value = .{ .String = "two"}}};
+    const expr = Expr.initBinary(&one, concat, &two);
+    const interp = Interpreter.init(expr);
+
+    try std.testing.expect(std.mem.eql(u8, try (try interp.interpret()).asString(), "onetwo"));
+}
