@@ -6,6 +6,9 @@ const Lexer = @import("lexer.zig").Lexer;
 const TT = @import("token.zig").TokenType;
 const VT = @import("token.zig").ValueType;
 const Interpreter = @import("interpreter.zig").Interpreter;
+const Result = @import("result.zig").Result;
+const Error = @import("result.zig").Error;
+const ResultError = @import("result.zig").ResultError;
 
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
@@ -55,7 +58,7 @@ pub const Binary = struct {
     operator: Token,
     right: *const Expr,
 
-    fn evaluate(self: Binary, interp: Interpreter) ResultError!Result(Value) {
+    fn evaluate(self: Binary, interp: *Interpreter) ResultError!Result(Value) {
         const left = try (try self.left.evaluate(interp)).unwrap();
         const right = try (try self.right.evaluate(interp)).unwrap();
 
@@ -67,8 +70,10 @@ pub const Binary = struct {
             .MINUS => self.getNumberResult(left, right),
             .PLUS => if (left.isNumber() and right.isNumber()) {
                 return self.getNumberResult(left, right);
+            } else if (left.isString() and right.isString()) {
+                return self.getStringResult(left, right, interp);
             } else {
-                return self.getStringResult(left, right);
+                return Result(Value).err(Error{ .token = self.operator, .message = "Addition operator expects a number or a string" });
             },
             .SLASH => self.getNumberResult(left, right),
             .STAR => self.getNumberResult(left, right),
@@ -99,17 +104,14 @@ pub const Binary = struct {
         }
     }
 
-    pub fn getStringResult(self: Binary, left: Value, right: Value) Result(Value) {
+    pub fn getStringResult(self: Binary, left: Value, right: Value, interp: *Interpreter) Result(Value) {
         if (left.isString() and right.isString()) {
             const l = left.asString() catch unreachable;
             const r = right.asString() catch unreachable;
 
             return switch (self.operator.tokenType) {
                 .PLUS => {
-                    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-                    defer arena.deinit();
-
-                    const result = std.fmt.allocPrint(arena.allocator(), "{s}{s}", .{l, r}) catch {
+                    const result = std.fmt.allocPrint(interp.allocator, "{s}{s}", .{l, r}) catch {
                         return Result(Value).err(Error.init(self.operator, "Error allocating space for concatenated string"));
                     };
                     return Result(Value).ok(.{ .String = result });
@@ -126,7 +128,7 @@ pub const Unary = struct {
     operator: Token,
     right: *const Expr,
 
-    fn evaluate(self: Unary, interp: Interpreter) ResultError!Result(Value) {
+    fn evaluate(self: Unary, interp: *Interpreter) ResultError!Result(Value) {
         const right = try (try self.right.evaluate(interp)).unwrap();
 
         return switch (self.operator.tokenType) {
@@ -154,7 +156,7 @@ pub const Unary = struct {
 pub const Literal = struct {
     value: ?Value = null,
 
-    fn evaluate(self: Literal, interp: Interpreter) Result(Value) {
+    fn evaluate(self: Literal, interp: *Interpreter) Result(Value) {
         _ = interp;
         if (self.value) |value| {
             return Result(Value).ok(value);
@@ -167,70 +169,8 @@ pub const Literal = struct {
 pub const Grouping = struct {
     expression: *const Expr,
 
-    fn evaluate(self: Grouping, interp: Interpreter) ResultError!Result(Value) {
+    fn evaluate(self: Grouping, interp: *Interpreter) ResultError!Result(Value) {
         return try self.expression.evaluate(interp);
-    }
-};
-
-pub fn Result(comptime T: type) type {
-    return union(enum) {
-        const Self = @This();
-
-        ok: T,
-        err: Error,
-
-        pub fn ok(payload: T) Self {
-            return Self {
-                .ok = payload,
-            };
-        }
-
-        pub fn err(payload: Error) Self {
-            return Self {
-                .err = payload,
-            };
-        }
-
-        pub fn unwrap(self: Self) ResultError!T {
-            switch (self) {
-                .ok => |okay| return okay,
-                .err => return ResultError.UnwrapError,
-            }
-        }
-
-        pub fn deinit(self: Self) void {
-            switch (self) {
-                .err => {},
-                .ok => |value| {
-                    if (comptime std.meta.hasFn("deinit")(T)) {
-                        value.deinit();
-                    }
-                }
-            }
-        }
-    };
-}
-
-pub const ResultError = error {
-    UnwrapError,
-};
-
-pub const Error = struct {
-    token: ?Token,
-    message: str,
-
-    pub fn init(token: ?Token, message: str) Error {
-        return Error{
-            .token = token,
-            .message = message,
-        };
-    }
-
-    pub fn format(self: Error, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
-        try writer.print("({?} {s}", .{ self.token, self.message });
     }
 };
 
@@ -256,7 +196,7 @@ pub const Expr = union(enum) {
         return Expr{ .Grouping = Grouping{ .expression = expression } };
     }
 
-    pub fn evaluate(self: Expr, interp: Interpreter) ResultError!Result(Value) {
+    pub fn evaluate(self: Expr, interp: *Interpreter) ResultError!Result(Value) {
         return switch (self) {
             .Binary => try self.Binary.evaluate(interp),
             .Unary => try self.Unary.evaluate(interp),

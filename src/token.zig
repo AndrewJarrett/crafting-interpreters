@@ -158,15 +158,13 @@ pub const ValueError = error {
 };
 
 pub const Token = struct {
-    const Self = @This();
-
     tokenType: TokenType,
     lexeme: str,
     literal: ?Value,
     line: usize,
 
-    pub fn init(tokenType: TokenType, lexeme: str, literal: ?Value, line: usize) Self {
-        return Self{
+    pub fn init(tokenType: TokenType, lexeme: str, literal: ?Value, line: usize) Token {
+        return Token{
             .tokenType = tokenType,
             .lexeme = lexeme,
             .literal = literal,
@@ -174,7 +172,7 @@ pub const Token = struct {
         };
     }
 
-    pub fn format(self: Self, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(self: Token, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
 
