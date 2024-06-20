@@ -6,23 +6,29 @@ const Allocator = std.mem.Allocator;
 const ExitStatus = @import("main.zig").ExitStatus;
 const Scanner = @import("scanner.zig").Scanner;
 const Token = @import("token.zig").Token;
-const TT = @import("token.zig").TokenType;
+const Value = @import("token.zig").Value;
+const Expr = @import("parser.zig").Expr;
 const Parser = @import("parser.zig").Parser;
+const InterpreterError = @import("interpreter.zig").InterpreterError;
+const Interpreter = @import("interpreter.zig").Interpreter;
 
 const str = []const u8;
 
 pub const Lexer = struct {
-    const Self = @This();
-
     allocator: Allocator,
+    var interp: Interpreter = undefined;
 
-    pub fn init(allocator: Allocator) Self {
-        return Self{
+    pub fn init(allocator: Allocator) Lexer {
+        return Lexer{
             .allocator = allocator,
         };
     }
 
-    pub fn runPrompt(self: Self) !ExitStatus {
+    pub fn deinit(self: Lexer) void {
+        self.interp.deinit();
+    }
+
+    pub fn runPrompt(self: Lexer) !ExitStatus {
         if (builtin.is_test) {
             // If running a test, don't run the REPL
             return ExitStatus.EX_OK;
@@ -43,9 +49,10 @@ pub const Lexer = struct {
         var buffer: [1024]u8 = undefined;
         while (input_stream.readUntilDelimiterOrEof(&buffer, '\n')) |line| {
             if (line) |source| {
-                self.run(source) catch {
+                const result = self.run(source) catch {
                     continue; // ignore errors and try again
                 };
+                try stdout.print("{s}\n", .{result});
                 try stdout.print("> ", .{});
             } else {
                 try stdout.print("\nGoodbye!\n", .{});
@@ -56,7 +63,7 @@ pub const Lexer = struct {
         }
     }
 
-    pub fn runFile(self: Self, file_path: str) !ExitStatus {
+    pub fn runFile(self: Lexer, file_path: str) !ExitStatus {
         var file = std.fs.cwd().openFile(file_path, .{}) catch |err| switch (err) {
             error.FileNotFound => return ExitStatus.EX_NOINPUT,
             else => return err,
@@ -74,8 +81,9 @@ pub const Lexer = struct {
         var buffer: [1024]u8 = undefined;
         while (input_stream.readUntilDelimiterOrEof(&buffer, '\n')) |line| {
             if (line) |source| {
-                self.run(source) catch {
-                    return ExitStatus.EX_DATAERR;
+                _ = self.run(source) catch |err| switch (err) {
+                    error.InterpreterError => return ExitStatus.EX_SOFTWARE,
+                    else => return ExitStatus.EX_DATAERR,
                 };
             } else {
                 return ExitStatus.EX_OK;
@@ -85,7 +93,7 @@ pub const Lexer = struct {
         }
     }
 
-    fn run(self: Self, source: str) !void {
+    fn run(self: Lexer, source: str) !Value {
         var scanner = Scanner.init(self.allocator, source);
         defer scanner.deinit();
 
@@ -95,6 +103,10 @@ pub const Lexer = struct {
         defer parser.deinit();
         const expr = try parser.parse();
         std.log.info("Expr: {s}", .{expr});
+
+        interp = Interpreter.init(self.allocator, expr);
+        const value = try interp.interpret();
+        return value;
     }
 
     pub fn handleError(line_num: usize, source: str) void {
@@ -102,7 +114,7 @@ pub const Lexer = struct {
     }
 
     pub fn handleTokenError(token: Token, msg: str) void {
-        if (token.tokenType == TT.EOF) {
+        if (token.tokenType == .EOF) {
             report(token.line, " at end", msg);
         } else {
             var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -111,6 +123,10 @@ pub const Lexer = struct {
             const where: str = std.fmt.allocPrint(arena.allocator(), " at '{s}'", .{token.lexeme}) catch unreachable;
             report(token.line, where, msg);
         }
+    }
+
+    pub fn handleRuntimeError(token: Token, msg: str) void {
+        std.debug.print("{s}\n[line {d}]", .{msg, token.line});
     }
 
     fn report(line_num: usize, where: str, source: str) void {
@@ -166,7 +182,7 @@ test "run method should parse" {
 
     const lex = Lexer.init(allocator);
     const source = "asdf 1234 efghi";
-    try std.testing.expect(@TypeOf(try lex.run(source)) == void);
+    try std.testing.expect(@TypeOf(try lex.run(source)) == Value);
 }
 
 test "error method should return void on success" {
