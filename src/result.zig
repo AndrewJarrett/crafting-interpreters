@@ -44,6 +44,7 @@ pub fn Result(comptime T: type) type {
 
 pub const ResultError = error {
     UnwrapError,
+    PrintError,
 };
 
 pub const Error = struct {

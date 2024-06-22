@@ -49,10 +49,7 @@ pub const Lexer = struct {
         var buffer: [1024]u8 = undefined;
         while (input_stream.readUntilDelimiterOrEof(&buffer, '\n')) |line| {
             if (line) |source| {
-                const result = self.run(source) catch {
-                    continue; // ignore errors and try again
-                };
-                try stdout.print("{s}\n", .{result});
+                self.run(source) catch continue; // ignore errors and try again
                 try stdout.print("> ", .{});
             } else {
                 try stdout.print("\nGoodbye!\n", .{});
@@ -81,7 +78,7 @@ pub const Lexer = struct {
         var buffer: [1024]u8 = undefined;
         while (input_stream.readUntilDelimiterOrEof(&buffer, '\n')) |line| {
             if (line) |source| {
-                _ = self.run(source) catch |err| switch (err) {
+                self.run(source) catch |err| switch (err) {
                     error.InterpreterError => return ExitStatus.EX_SOFTWARE,
                     else => return ExitStatus.EX_DATAERR,
                 };
@@ -93,7 +90,7 @@ pub const Lexer = struct {
         }
     }
 
-    fn run(self: Lexer, source: str) !Value {
+    fn run(self: Lexer, source: str) !void {
         var scanner = Scanner.init(self.allocator, source);
         defer scanner.deinit();
 
@@ -101,12 +98,14 @@ pub const Lexer = struct {
         std.log.info("Tokens: {s}", .{tokens.items});
         var parser = Parser.init(self.allocator, tokens);
         defer parser.deinit();
-        const expr = try parser.parse();
-        std.log.info("Expr: {s}", .{expr});
+        const statements = try parser.parse();
 
-        interp = Interpreter.init(self.allocator, expr);
-        const value = try interp.interpret();
-        return value;
+        for (statements.items) |stmt| {
+            std.log.info("Statement: {s}", .{stmt});
+        }
+
+        interp = Interpreter.init(self.allocator, statements);
+        try interp.interpret();
     }
 
     pub fn handleError(line_num: usize, source: str) void {

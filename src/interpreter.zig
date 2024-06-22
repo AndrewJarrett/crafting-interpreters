@@ -12,35 +12,39 @@ const ResultError = @import("result.zig").ResultError;
 const Value = @import("token.zig").Value;
 const Token = @import("token.zig").Token;
 const Lexer = @import("lexer.zig").Lexer;
+const Stmt = @import("stmt.zig").Stmt;
 
 const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
 
 pub const Interpreter = struct {
-    expr: Expr,
     allocator: Allocator,
+    statements: ArrayList(Stmt),
     result: ?Value,
 
-    pub fn init(allocator: Allocator, expr: Expr) Interpreter {
+    pub fn init(allocator: Allocator, statements: ArrayList(Stmt)) Interpreter {
         return Interpreter{
             .allocator = allocator,
-            .expr = expr,
+            .statements = statements,
             .result = null,
         };
     }
 
-    pub fn interpret(self: *Interpreter) !Value {
-        const result = try self.expr.evaluate(self);
-        
-        switch (result) {
-            .ok => |val| std.log.info("Value: {s}", .{val}),
-            .err => |err| Lexer.handleRuntimeError(err.token.?, err.message),
+    pub fn interpret(self: *Interpreter) !void {
+        for (self.statements.items) |stmt| {
+            const result = try stmt.evaluate(self);
+
+            if (result) |res| {
+                switch (res) {
+                    .ok => |val| std.log.info("Value: {s}", .{val}),
+                    .err => |err| Lexer.handleRuntimeError(err.token.?, err.message),
+                }
+
+                // Make sure we remove any prior result and free strings with heap allocations
+                self.deinit();
+                self.result = res.unwrap() catch return InterpreterError.InterpreterError;
+            }
         }
-
-        // Make sure we remove any prior result and free strings with heap allocations
-        self.deinit();
-        self.result = result.unwrap() catch null;
-
-        return self.result orelse return InterpreterError.InterpreterError;
     }
 
     pub fn deinit(self: *Interpreter) void {

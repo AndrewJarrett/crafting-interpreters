@@ -9,6 +9,7 @@ const Interpreter = @import("interpreter.zig").Interpreter;
 const Result = @import("result.zig").Result;
 const Error = @import("result.zig").Error;
 const ResultError = @import("result.zig").ResultError;
+const Stmt = @import("stmt.zig").Stmt;
 
 const ArrayList = std.ArrayList;
 const Allocator = std.mem.Allocator;
@@ -226,6 +227,7 @@ pub const EvaluateError = error {
 
 pub const Parser = struct {
     tokens: ArrayList(Token),
+    statements: ArrayList(Stmt),
     current: usize = 0,
     allocator: Allocator,
     nodes: ArrayList(*Expr),
@@ -234,6 +236,7 @@ pub const Parser = struct {
         return Parser{
             .allocator = allocator,
             .tokens = tokens,
+            .statements = ArrayList(Stmt).init(allocator),
             .nodes = ArrayList(*Expr).init(allocator),
         };
     }
@@ -258,9 +261,34 @@ pub const Parser = struct {
         return expr;
     }
 
-    pub fn parse(self: *Parser) ParseError!Expr {
-        const expr =  try self.expression();
-        return expr.*;
+    pub fn parse(self: *Parser) ParseError!ArrayList(Stmt) {
+        while (!self.isAtEnd()) {
+            const result = try self.statement();
+            try self.statements.append(result);
+        }
+        return self.statements;
+    }
+
+    fn statement(self: *Parser) ParseError!Stmt {
+        if (self.match(.{.PRINT})) {
+            return self.printStatement();
+        } else {
+            return self.expressionStatement();
+        }
+    }
+
+    fn printStatement(self: *Parser) ParseError!Stmt {
+        const val = try self.expression();
+
+        _ = try self.consume(.SEMICOLON, "Expect ';' after value.", ParseError.MissingSemicolon);
+        return Stmt.print(val);
+    }
+
+    fn expressionStatement(self: *Parser) ParseError!Stmt {
+        const expr = try self.expression();
+
+        _ = try self.consume(.SEMICOLON, "Expect ';' after expression.", ParseError.MissingSemicolon);
+        return Stmt.expression(expr);
     }
 
     fn expression(self: *Parser) ParseError!*Expr {
@@ -416,6 +444,7 @@ pub const Parser = struct {
 
 const ParseError = error{
     MissingParens,
+    MissingSemicolon,
     NoExpression,
     OutOfMemory,
 };
