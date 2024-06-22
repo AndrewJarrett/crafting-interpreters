@@ -96,6 +96,7 @@ pub const Lexer = struct {
 
         const tokens = try scanner.scanTokens();
         std.log.info("Tokens: {s}", .{tokens.items});
+
         var parser = Parser.init(self.allocator, tokens);
         defer parser.deinit();
         const statements = try parser.parse();
@@ -181,7 +182,7 @@ test "run method should parse" {
 
     const lex = Lexer.init(allocator);
     const source = "asdf 1234 efghi";
-    try std.testing.expect(@TypeOf(try lex.run(source)) == Value);
+    try std.testing.expect(@TypeOf(try lex.run(source)) == void);
 }
 
 test "error method should return void on success" {

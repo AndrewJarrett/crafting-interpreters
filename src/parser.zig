@@ -246,6 +246,7 @@ pub const Parser = struct {
             self.allocator.destroy(expr);
         }
         self.nodes.deinit();
+        self.statements.deinit();
     }
 
     fn createExpr(self: *Parser, inner: anytype) ParseError!*Expr {
@@ -475,16 +476,17 @@ test "Parse error no expression" {
 test "Parser success" {
     var tokens = ArrayList(Token).init(std.testing.allocator);
     defer tokens.deinit();
-    try tokens.append(Token.init(TT.NUMBER, "1", .{ .Number = 1.0 }, 1));
-    try tokens.append(Token.init(TT.PLUS, "+", null, 1));
-    try tokens.append(Token.init(TT.NUMBER, "1", .{ .Number = 1.0 }, 1));
-    try tokens.append(Token.init(TT.EOF, "", null, 1));
+    try tokens.append(Token.init(.NUMBER, "1", .{ .Number = 1.0 }, 1));
+    try tokens.append(Token.init(.PLUS, "+", null, 1));
+    try tokens.append(Token.init(.NUMBER, "1", .{ .Number = 1.0 }, 1));
+    try tokens.append(Token.init(.SEMICOLON, ";", null, 1));
+    try tokens.append(Token.init(.EOF, "", null, 1));
 
     var parser = Parser.init(std.testing.allocator, tokens);
     defer parser.deinit();
-    const expr = try parser.parse();
-    const expected: str = "(+ 1 1)";
-    try std.testing.expect(testExprMatchesExpected(expected, expr));
+    const stmts = try parser.parse();
+    const expected = "(+ 1 1)";
+    try std.testing.expect(testStmtsMatchesExpected(expected, stmts));
 }
 
 //test "Read grammar file" {
@@ -507,7 +509,18 @@ test "Expr: (* (- 123) (group 45.67))" {
 }
 
 // Helper method for checking if Expression matches expected string
+fn testStmtsMatchesExpected(comptime expected: str, stmts: ArrayList(Stmt)) bool {
+    var isEqual = false;
+
+    for (stmts.items) |stmt| {
+        isEqual = testExprMatchesExpected(expected, stmt.expression.*);
+    }
+
+    return isEqual;
+}
+
 fn testExprMatchesExpected(comptime expected: str, expr: Expr) bool {
     var tokenBuffer: [1000]u8 = undefined;
-    return std.mem.eql(u8, std.fmt.bufPrint(&tokenBuffer, "{s}", .{expr}) catch "FAILED", expected);
+
+    return  std.mem.eql(u8, std.fmt.bufPrint(&tokenBuffer, "{s}", .{expr}) catch "FAILED", expected);
 }
