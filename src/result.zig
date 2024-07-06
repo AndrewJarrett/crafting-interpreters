@@ -1,16 +1,17 @@
 const std = @import("std");
 const Token = @import("token.zig").Token;
 
+const Allocator = std.mem.Allocator;
 const str = []const u8;
 
 pub fn Result(comptime T: type) type {
     return union(enum) {
         const Self = @This();
 
-        ok: T,
+        ok: *const T,
         err: Error,
 
-        pub fn ok(payload: T) Self {
+        pub fn ok(payload: *const T) Self {
             return Self {
                 .ok = payload,
             };
@@ -22,9 +23,12 @@ pub fn Result(comptime T: type) type {
             };
         }
 
-        pub fn unwrap(self: Self) ResultError!T {
+        pub fn unwrap(self: Self) ResultError!*const T {
             switch (self) {
-                .ok => |okay| return okay,
+                .ok => |k| {
+                    std.debug.print("\nUnwrap: {s}", .{k.*});
+                    return k;
+                },
                 .err => return ResultError.UnwrapError,
             }
         }
@@ -32,11 +36,21 @@ pub fn Result(comptime T: type) type {
         pub fn deinit(self: Self) void {
             switch (self) {
                 .err => {},
-                .ok => |value| {
+                .ok => |k| {
                     if (comptime std.meta.hasFn("deinit")(T)) {
-                        value.deinit();
+                        k.deinit();
                     }
                 }
+            }
+        }
+
+        pub fn format(self: Self, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = fmt;
+            _ = options;
+
+            switch (self) {
+                .ok => |k| try writer.print("{s}", .{k.*}),
+                .err => |e| try writer.print("{s}", .{e}),
             }
         }
     };

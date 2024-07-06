@@ -2,6 +2,7 @@ const std = @import("std");
 const Token = @import("token.zig").Token;
 const TT = @import("token.zig").TokenType;
 const Value = @import("token.zig").Value;
+const HeapValue = @import("token.zig").HeapValue;
 const Lexer = @import("lexer.zig").Lexer;
 
 const ArrayList = std.ArrayList;
@@ -34,7 +35,7 @@ pub const Scanner = struct {
 
     allocator: Allocator,
     src: str,
-    tokens: ArrayList(Token) = undefined,
+    tokens: ArrayList(*const Token),
     start: usize = 0,
     current: usize = 0,
     line: usize = 1,
@@ -42,19 +43,19 @@ pub const Scanner = struct {
     pub fn init(allocator: Allocator, src: str) Self {
         return Self{
             .allocator = allocator,
-            .tokens = ArrayList(Token).init(allocator),
+            .tokens = ArrayList(*const Token).init(allocator),
             .src = src,
         };
     }
 
-    pub fn scanTokens(self: *Self) !ArrayList(Token) {
+    pub fn scanTokens(self: *Self) !*ArrayList(*const Token) {
         while (!self.isAtEnd()) {
             self.start = self.current;
             try self.scanToken();
         }
 
         try self.addToken(TT.EOF);
-        return self.tokens;
+        return &self.tokens;
     }
 
     fn scanToken(self: *Self) !void {
@@ -124,7 +125,7 @@ pub const Scanner = struct {
         }
 
         const literal = self.src[self.start..self.current];
-        try self.addTokenWithLiteral(TT.NUMBER, .{ .Number = try std.fmt.parseFloat(f64, literal) });
+        try self.addTokenWithLiteral(TT.NUMBER, try std.fmt.parseFloat(f64, literal));
     }
 
     fn string(self: *Self) !void {
@@ -140,7 +141,7 @@ pub const Scanner = struct {
 
         // Trim the surrounding quotes
         const value = self.src[(self.start + 1)..(self.current - 1)];
-        try self.addTokenWithLiteral(TT.STRING, .{ .String = value });
+        try self.addTokenWithLiteral(TT.STRING, value);
     }
 
     fn match(self: *Self, expected: u8) bool {
@@ -193,19 +194,29 @@ pub const Scanner = struct {
     }
 
     fn addToken(self: *Self, tokenType: TT) !void {
+        std.debug.print("\nToken Type: {s}", .{tokenType});
         try self.addTokenWithLiteral(tokenType, null);
     }
 
-    fn addTokenWithLiteral(self: *Self, tokenType: TT, literal: ?Value) !void {
+    fn addTokenWithLiteral(self: *Self, tokenType: TT, literal: anytype) !void {
         var text: []const u8 = "";
         if (tokenType != TT.EOF and self.current <= self.src.len) {
             text = self.src[self.start..self.current];
         }
+        std.debug.print("\nTokenType: {s}; Len: {d}; Start: {d}; Current: {d}; Text: {s}", .{tokenType, self.src.len, self.start, self.current, text});
         //std.log.info("TokenType: {s}; Len: {d}; Start: {d}; Current: {d}; Text: {d}", .{tokenType, self.src.len, self.start, self.current, text});
-        try self.tokens.append(Token.init(tokenType, text, literal, self.line));
+        const tokenPtr = try self.allocator.create(Token);
+        tokenPtr.* = Token.init(self.allocator, tokenType, text, literal, self.line);
+        try self.tokens.append(tokenPtr);
     }
 
     pub fn deinit(self: Self) void {
+        for (self.tokens.items) |tok| {
+            if (tok.literal) |lit| {
+                lit.deinit();
+            }
+            self.allocator.destroy(tok);
+        }
         self.tokens.deinit();
     }
 };
@@ -254,6 +265,10 @@ test "scanToken" {
 
     try scanner.scanToken();
     try std.testing.expect(scanner.current == 2);
+
+    for (scanner.tokens.items) |item| {
+        std.debug.print("\nItem: {s}", .{item});
+    }
 
     try std.testing.expect(scanner.tokens.items.len == 2);
     try std.testing.expect(std.mem.eql(u8, scanner.tokens.items[0].lexeme, "("));
@@ -355,15 +370,16 @@ test "number" {
         const token = scanner.tokens.popOrNull();
         try std.testing.expect(token != null);
         try std.testing.expect(std.mem.eql(u8, token.?.lexeme, num));
-        try std.testing.expect(token.?.tokenType == TT.NUMBER);
+        try std.testing.expect(token.?.tokenType == .NUMBER);
     }
+
     for (notNumbers) |num| {
         scanner.src = num;
         scanner.current = 0;
         scanner.start = 0;
         try scanner.scanToken();
         while (scanner.tokens.popOrNull()) |token| {
-            try std.testing.expect(token.tokenType != TT.NUMBER);
+            try std.testing.expect(token.tokenType != .NUMBER);
         }
     }
 }

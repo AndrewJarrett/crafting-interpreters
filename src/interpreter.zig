@@ -10,6 +10,7 @@ const Result = @import("result.zig").Result;
 const Error = @import("result.zig").Error;
 const ResultError = @import("result.zig").ResultError;
 const Value = @import("token.zig").Value;
+const HeapValue = @import("token.zig").HeapValue;
 const Token = @import("token.zig").Token;
 const Lexer = @import("lexer.zig").Lexer;
 const Stmt = @import("stmt.zig").Stmt;
@@ -20,32 +21,41 @@ const ArrayList = std.ArrayList;
 pub const Interpreter = struct {
     allocator: Allocator,
     statements: ArrayList(Stmt),
-    values: ArrayList(*Value),
+    values: ArrayList(*const HeapValue),
 
     pub fn init(allocator: Allocator, statements: ArrayList(Stmt)) Interpreter {
         return Interpreter{
             .allocator = allocator,
             .statements = statements,
-            .values = ArrayList(*Value).init(allocator),
+            .values = ArrayList(*const HeapValue).init(allocator),
         };
     }
 
     pub fn interpret(self: *Interpreter) !void {
         for (self.statements.items) |stmt| {
             const result = try stmt.evaluate(self);
+            std.debug.print("\nStmt: {s}; Result: {s}", .{stmt, result});
 
             switch (result) {
                 .ok => |val| std.log.info("Value: {s}", .{val}),
                 .err => |err| Lexer.handleRuntimeError(err.token.?, err.message),
             }
 
-            var value = result.unwrap() catch return InterpreterError.InterpreterError;
-            try self.values.append(&value);
+            const value = result.unwrap() catch return InterpreterError.InterpreterError;
+            std.debug.print("\nValue: {s}; Address: {*}", .{value.*, value});
+            try self.values.append(value);
         }
     }
 
     pub fn deinit(self: *Interpreter) void {
+        while (self.values.popOrNull()) |val| {
+            val.deinit();
+        }
         self.values.deinit();
+
+        while (self.statements.popOrNull()) |stmt| {
+            stmt.deinit();
+        }
         self.statements.deinit();
     }
 };
@@ -55,9 +65,9 @@ pub const InterpreterError = error {
 };
 
 test "Interpreter init" {
-    var expr = Expr { .Literal = Literal{ .value = Value{ .Bool = true }}};
+    const expr = Expr.initLiteral(std.testing.allocator, true);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(&expr));
+    try stmts.append(Stmt.expression(expr));
 
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
@@ -66,139 +76,168 @@ test "Interpreter init" {
 }
 
 test "interpret addition" {
-    const plus = Token.init(.PLUS, "+", null, 1);
-    var one = Expr{ .Literal = Literal{ .value = Value{ .Number = 1}}};
-    var expr = Expr.initBinary(&one, plus, &one);
+    const plus = Token.init(std.testing.allocator, .PLUS, "+", null, 1);
+    const one = Expr.initLiteral(std.testing.allocator, 1);
+    const one2 = Expr.initLiteral(std.testing.allocator, 1);
+    //var one2 = one.*;
+    //defer one.deinit();
+    const expr = Expr.initBinary(std.testing.allocator, one, plus, one2);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(&expr));
+    try stmts.append(Stmt.expression(expr));
 
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().asNumber() == 2);
+    try std.testing.expect(try interp.values.pop().value.asNumber() == 2);
 }
 
 test "interpret subtraction" {
-    const minus = Token.init(.MINUS, "-", null, 1);
-    var one = Expr{ .Literal = Literal{ .value = Value{ .Number = 1}}};
-    var expr = Expr.initBinary(&one, minus, &one);
+    const minus = Token.init(std.testing.allocator, .MINUS, "-", null, 1);
+    const one = Expr.initLiteral(std.testing.allocator, 1);
+    const one2 = Expr.initLiteral(std.testing.allocator, 1);
+    const expr = Expr.initBinary(std.testing.allocator, one, minus, one2);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(&expr));
+    try stmts.append(Stmt.expression(expr));
 
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().asNumber() == 0);
+    try std.testing.expect(try interp.values.pop().value.asNumber() == 0);
 }
 
 test "interpret multiplication" {
-    const star = Token.init(.STAR, "*", null, 1);
-    var four = Expr{ .Literal = Literal{ .value = Value{ .Number = 4}}};
-    var expr = Expr.initBinary(&four, star, &four);
+    const star = Token.init(std.testing.allocator, .STAR, "*", null, 1);
+    const four = Expr.initLiteral(std.testing.allocator, 4);
+    const four2 = Expr.initLiteral(std.testing.allocator, 4);
+    const expr = Expr.initBinary(std.testing.allocator, four, star, four2);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(&expr));
+    try stmts.append(Stmt.expression(expr));
     
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().asNumber() == 16);
+    try std.testing.expect(try interp.values.pop().value.asNumber() == 16);
 }
 
 test "interpret division" {
-    const slash = Token.init(.SLASH, "/", null, 1);
-    var four = Expr{ .Literal = Literal{ .value = Value{ .Number = 4}}};
-    var expr = Expr.initBinary(&four, slash, &four);
+    const slash = Token.init(std.testing.allocator, .SLASH, "/", null, 1);
+    const four = Expr.initLiteral(std.testing.allocator, 4);
+    const four2 = Expr.initLiteral(std.testing.allocator, 4);
+    const expr = Expr.initBinary(std.testing.allocator, four, slash, four2);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(&expr));
+    try stmts.append(Stmt.expression(expr));
 
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().asNumber() == 1);
+    try std.testing.expect(try interp.values.pop().value.asNumber() == 1);
 }
 
 test "interpret equality operators" {
-    const gt = Token.init(.GREATER, ">", null, 1);
-    const gte = Token.init(.GREATER_EQUAL, ">=", null, 1);
-    const lt = Token.init(.LESS, "<", null, 1);
-    const lte = Token.init(.LESS_EQUAL, "<=", null, 1);
-    const ne = Token.init(.BANG_EQUAL, "!=", null, 1);
-    const eq = Token.init(.EQUAL_EQUAL, "==", null, 1);
+    const gt = Token.init(std.testing.allocator, .GREATER, ">", null, 1);
+    //const gte = Token.init(std.testing.allocator, .GREATER_EQUAL, ">=", null, 1);
+    //const lt = Token.init(std.testing.allocator, .LESS, "<", null, 1);
+    //const lte = Token.init(std.testing.allocator, .LESS_EQUAL, "<=", null, 1);
+    //const ne = Token.init(std.testing.allocator, .BANG_EQUAL, "!=", null, 1);
+    //const eq = Token.init(std.testing.allocator, .EQUAL_EQUAL, "==", null, 1);
 
     const alloc = std.testing.allocator;
     var stmts = ArrayList(Stmt).init(alloc);
-    var one = Expr{ .Literal = Literal{ .value = Value{ .Number = 1}}};
-    var two = Expr{ .Literal = Literal{ .value = Value{ .Number = 2}}};
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, gt, &one))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, gt, &two))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&two, gt, &one))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, gte, &one))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, gte, &two))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&two, gte, &one))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, lt, &one))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, lt, &two))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&two, lt, &one))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, lte, &one))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, lte, &two))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&two, lte, &one))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, ne, &one))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, ne, &two))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&two, ne, &one))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, eq, &one))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&one, eq, &two))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initBinary(&two, eq, &one))));
+    const one = Expr.initLiteral(std.testing.allocator, 1);
+    //var two = Expr.initLiteral(HeapValue.init(std.testing.allocator, 2));
+
+    //const newOne = copy(one);
+    const newNewOne = Expr.initLiteral(std.testing.allocator, 1);
+    const oneGtOne = Expr.initBinary(std.testing.allocator, one, gt, newNewOne);
+    std.debug.print("\n&one: {*}; one: {s}; &copy(one): {*}; copy(one): {s}", .{one, one, newNewOne, newNewOne});
+    //var oneGtTwo = Expr.initBinary(copy(one), gt, &two);
+    //var twoGtOne = Expr.initBinary(copy(two), gt, copy(one));
+    //var oneGteOne = Expr.initBinary(copy(one), gte, copy(one));
+    //var oneGteTwo = Expr.initBinary(copy(one), gte, copy(two));
+    //var twoGteOne = Expr.initBinary(copy(two), gte, copy(one));
+    //var oneLtOne = Expr.initBinary(copy(one), lt, copy(one));
+    //var oneLtTwo = Expr.initBinary(copy(one), lt, copy(two));
+    //var twoLtOne = Expr.initBinary(copy(two), lt, copy(one));
+    //var oneLteOne = Expr.initBinary(copy(one), lte, copy(one));
+    //var oneLteTwo = Expr.initBinary(copy(one), lte, copy(two));
+    //var twoLteOne = Expr.initBinary(copy(two), lte, copy(one));
+    //var oneNeOne = Expr.initBinary(copy(one), ne, copy(one));
+    //var oneNeTwo = Expr.initBinary(copy(one), ne, copy(two));
+    //var twoNeOne = Expr.initBinary(copy(two), ne, copy(one));
+    //var oneEqOne = Expr.initBinary(copy(one), eq, copy(one));
+    //var oneEqTwo = Expr.initBinary(copy(one), eq, copy(two));
+    //var twoEqOne = Expr.initBinary(copy(two), eq, copy(one));
+
+    try stmts.append(Stmt.expression(oneGtOne));
+    //try stmts.append(Stmt.expression(&oneGtTwo));
+    //try stmts.append(Stmt.expression(&twoGtOne));
+    //try stmts.append(Stmt.expression(&oneGteOne));
+    //try stmts.append(Stmt.expression(&oneGteTwo));
+    //try stmts.append(Stmt.expression(&twoGteOne));
+    //try stmts.append(Stmt.expression(&oneLtOne));
+    //try stmts.append(Stmt.expression(&oneLtTwo));
+    //try stmts.append(Stmt.expression(&twoLtOne));
+    //try stmts.append(Stmt.expression(&oneLteOne));
+    //try stmts.append(Stmt.expression(&oneLteTwo));
+    //try stmts.append(Stmt.expression(&twoLteOne));
+    //try stmts.append(Stmt.expression(&oneNeOne));
+    //try stmts.append(Stmt.expression(&oneNeTwo));
+    //try stmts.append(Stmt.expression(&twoNeOne));
+    //try stmts.append(Stmt.expression(&oneEqOne));
+    //try stmts.append(Stmt.expression(&oneEqTwo));
+    //try stmts.append(Stmt.expression(&twoEqOne));
 
     var interp = Interpreter.init(alloc, stmts);
     defer interp.deinit();
     try interp.interpret();
 
     // Test in opposite order (popping values off of a stack)
-    try std.testing.expect(try interp.values.pop().asBool() == false); // 2 == 1
-    try std.testing.expect(try interp.values.pop().asBool() == false); // 1 == 2
-    try std.testing.expect(try interp.values.pop().asBool() == true); // 1 == 1
-    try std.testing.expect(try interp.values.pop().asBool() == true); // 2 != 1
-    try std.testing.expect(try interp.values.pop().asBool() == false); // 1 != 2
-    try std.testing.expect(try interp.values.pop().asBool() == false); // 1 != 1
-    try std.testing.expect(try interp.values.pop().asBool() == true); // 1 <= 2
-    try std.testing.expect(try interp.values.pop().asBool() == false); // 2 <= 1
-    try std.testing.expect(try interp.values.pop().asBool() == true); // 1 <= 1
-    try std.testing.expect(try interp.values.pop().asBool() == false); // 2 < 1
-    try std.testing.expect(try interp.values.pop().asBool() == true); // 1 < 2
-    try std.testing.expect(try interp.values.pop().asBool() == false); // 1 < 1
-    try std.testing.expect(try interp.values.pop().asBool() == true); // 2 >= 1
-    try std.testing.expect(try interp.values.pop().asBool() == false); // 1 >= 2
-    try std.testing.expect(try interp.values.pop().asBool() == true); // 1 >= 1
-    try std.testing.expect(try interp.values.pop().asBool() == true); // 2 > 1
-    try std.testing.expect(try interp.values.pop().asBool() == false); // 1 > 2
-    try std.testing.expect(try interp.values.pop().asBool() == false); // 1 > 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == false); // 2 == 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == false); // 1 == 2
+    //try std.testing.expect(try interp.values.pop().value.asBool() == true); // 1 == 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == true); // 2 != 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == true); // 1 != 2
+    //try std.testing.expect(try interp.values.pop().value.asBool() == false); // 1 != 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == false); // 2 <= 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == true); // 1 <= 2
+    //try std.testing.expect(try interp.values.pop().value.asBool() == true); // 1 <= 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == false); // 2 < 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == true); // 1 < 2
+    //try std.testing.expect(try interp.values.pop().value.asBool() == false); // 1 < 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == true); // 2 >= 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == false); // 1 >= 2
+    //try std.testing.expect(try interp.values.pop().value.asBool() == true); // 1 >= 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == true); // 2 > 1
+    //try std.testing.expect(try interp.values.pop().value.asBool() == false); // 1 > 2
+    try std.testing.expect(try interp.values.pop().value.asBool() == false); // 1 > 1
 }
 
 test "interpret string concat" {
-    const concat = Token.init(.PLUS, "+", null, 1);
-    var one = Expr{ .Literal = .{ .value = .{ .String = "one"}}};
-    var two = Expr{ .Literal = .{ .value = .{ .String = "two"}}};
-    var expr = Expr.initBinary(&one, concat, &two);
+    const concat = Token.init(std.testing.allocator, .PLUS, "+", null, 1);
+    const one = Expr.initLiteral(std.testing.allocator, "one");
+    const two = Expr.initLiteral(std.testing.allocator, "two");
+    const expr = Expr.initBinary(std.testing.allocator, one, concat, two);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(&expr));
+    try stmts.append(Stmt.expression(expr));
 
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(std.mem.eql(u8, try interp.values.pop().asString(), "onetwo"));
+    try std.testing.expect(std.mem.eql(u8, try interp.values.pop().value.asString(), "onetwo"));
 }
 
 test "interpret binary error" {
-    const badToken = Token.init(.FOR, "for", null, 1);
-    var one = Expr{ .Literal = .{ .value = .{ .Number = 1} } };
-    var all = Expr{ .Literal = .{ .value = .{ .String = "all" } } };
-    var oneForAll = Expr.initBinary(&one, badToken, &all);
+    const badToken = Token.init(std.testing.allocator, .FOR, "for", null, 1);
+    const one = Expr.initLiteral(std.testing.allocator, 1);
+    const all = Expr.initLiteral(std.testing.allocator, "all");
+    const oneForAll = Expr.initBinary(std.testing.allocator, one, badToken, all);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(&oneForAll));
+    try stmts.append(Stmt.expression(oneForAll));
 
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
@@ -207,11 +246,12 @@ test "interpret binary error" {
 }
 
 test "interpret adding error" {
-    const plus = Token.init(.PLUS, "+", null, 1);
-    var trueBool = Expr{ .Literal = .{ .value = .{ .Bool = true } } };
-    var truePlusTrue = Expr.initBinary(&trueBool, plus, &trueBool);
+    const plus = Token.init(std.testing.allocator, .PLUS, "+", null, 1);
+    const trueBool = Expr.initLiteral(std.testing.allocator, true);
+    const trueBool2 = Expr.initLiteral(std.testing.allocator, true);
+    const truePlusTrue = Expr.initBinary(std.testing.allocator, trueBool, plus, trueBool2);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(&truePlusTrue));
+    try stmts.append(Stmt.expression(truePlusTrue));
 
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
@@ -220,12 +260,12 @@ test "interpret adding error" {
 }
 
 test "interpret number error" {
-    const minus = Token.init(.MINUS, "-", null, 1);
-    var one = Expr{ .Literal = .{ .value = .{ .Number = 1 } } };
-    var oneStr = Expr{ .Literal = .{ .value = .{ .String = "one" } } };
-    var oneMinusOneStr = Expr.initBinary(&one, minus, &oneStr);
+    const minus = Token.init(std.testing.allocator, .MINUS, "-", null, 1);
+    const one = Expr.initLiteral(std.testing.allocator, 1);
+    const oneStr = Expr.initLiteral(std.testing.allocator, "one");
+    const oneMinusOneStr = Expr.initBinary(std.testing.allocator, one, minus, oneStr);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(&oneMinusOneStr));
+    try stmts.append(Stmt.expression(oneMinusOneStr));
 
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
@@ -234,62 +274,108 @@ test "interpret number error" {
 }
 
 test "interpret unary operations" {
-    const bang = Token.init(.BANG, "!", null, 1);
-    const neg = Token.init(.MINUS, "-", null, 1);
-    var num = Expr{ .Literal = .{ .value = .{ .Number = 1 } } };
-    var falseBool = Expr{ .Literal = .{ .value = .{ .Bool = false } } };
-    var trueBool = Expr{ .Literal = .{ .value = .{ .Bool = true } } };
-    var nil = Expr{ .Literal = .{ .value = .{ .Nil = {} } } };
-    var string = Expr{ .Literal = .{ .value = .{ .String = "a string is considered truthy" } } };
+    const bang = Token.init(std.testing.allocator, .BANG, "!", null, 1);
+    const neg = Token.init(std.testing.allocator, .MINUS, "-", null, 1);
+    const num = Expr.initLiteral(std.testing.allocator, 1);
+    const num2 = Expr.initLiteral(std.testing.allocator, 1);
+    const falseBool = Expr.initLiteral(std.testing.allocator, false);
+    const trueBool = Expr.initLiteral(std.testing.allocator, true);
+    const nil = Expr.initLiteral(std.testing.allocator, {});
+    const string = Expr.initLiteral(std.testing.allocator, "a string is considered truthy");
+
+    const notNum = Expr.initUnary(std.testing.allocator, bang, num);
+    const notFalse = Expr.initUnary(std.testing.allocator, bang, falseBool);
+    const notTrue = Expr.initUnary(std.testing.allocator, bang, trueBool);
+    const notNil = Expr.initUnary(std.testing.allocator, bang, nil);
+    const notString = Expr.initUnary(std.testing.allocator, bang, string);
+    const negNum = Expr.initUnary(std.testing.allocator, neg, num2);
 
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(@constCast(&Expr.initUnary(bang, &num))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initUnary(bang, &falseBool))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initUnary(bang, &trueBool))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initUnary(bang, &nil))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initUnary(bang, &string))));
-    try stmts.append(Stmt.expression(@constCast(&Expr.initUnary(neg, &num))));
+    try stmts.append(Stmt.expression(notNum));
+    try stmts.append(Stmt.expression(notFalse));
+    try stmts.append(Stmt.expression(notTrue));
+    try stmts.append(Stmt.expression(notNil));
+    try stmts.append(Stmt.expression(notString));
+    try stmts.append(Stmt.expression(negNum));
 
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
     try interp.interpret();
 
     // Test in reverse order (popping values off the stack)
-    try std.testing.expect(try interp.values.pop().asNumber() == -1); // -1
-    try std.testing.expect(try interp.values.pop().asBool() == false); // !"string"
-    try std.testing.expect(try interp.values.pop().asBool() == true); // !nil
-    try std.testing.expect(try interp.values.pop().asBool() == false); // !true
-    try std.testing.expect(try interp.values.pop().asBool() == true); // !false
+    try std.testing.expect(try interp.values.pop().value.asNumber() == -1); // -1
+    try std.testing.expect(try interp.values.pop().value.asBool() == false); // !"string"
+    try std.testing.expect(try interp.values.pop().value.asBool() == true); // !nil
+    try std.testing.expect(try interp.values.pop().value.asBool() == false); // !true
+    try std.testing.expect(try interp.values.pop().value.asBool() == true); // !false
+}
+
+test "interpret bad unary expression" {
+    const neg = Token.init(std.testing.allocator, .MINUS, "-", null, 1);
+    const string = Expr.initLiteral(std.testing.allocator, "a string is considered truthy");
 
     // Test error (-"string")
-    try stmts.append(Stmt.expression(@constCast(&Expr.initUnary(neg, &string))));
-    interp = Interpreter.init(std.testing.allocator, stmts);
+    const negString = Expr.initUnary(std.testing.allocator, neg, string);
+    var stmts = ArrayList(Stmt).init(std.testing.allocator);
+    try stmts.append(Stmt.expression(negString));
+
+    var interp = Interpreter.init(std.testing.allocator, stmts);
+    defer interp.deinit();
+
     try std.testing.expectError(InterpreterError.InterpreterError, interp.interpret());
 }
 
 test "interpret grouping" {
-    const plus = Token.init(.PLUS, "+", null, 1);
-    var one = Expr{ .Literal = .{ .value = .{ .Number = 1} } };
-    var onePlusOne = Expr.initBinary(&one, plus, &one);
-    var group = Expr.initGrouping(&onePlusOne);
+    const plus = Token.init(std.testing.allocator, .PLUS, "+", null, 1);
+    const one = Expr.initLiteral(std.testing.allocator, 1);
+    //defer one.deinit();
+    const one2 = Expr.initLiteral(std.testing.allocator, 1);
+    //defer one2.deinit();
+    const onePlusOne = Expr.initBinary(std.testing.allocator, one, plus, one2);
+    const group = Expr.initGrouping(std.testing.allocator, onePlusOne);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(&group));
+    try stmts.append(Stmt.expression(group));
 
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().asNumber() == 2);
+    try std.testing.expect(try interp.values.pop().value.asNumber() == 2);
 }
 
 test "interpret literal" {
-    var one = Expr{ .Literal = .{ .value = .{ .Number = 1} } };
+    const one = Expr.initLiteral(std.testing.allocator, 1);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
-    try stmts.append(Stmt.expression(&one));
+    try stmts.append(Stmt.expression(one));
 
     var interp = Interpreter.init(std.testing.allocator, stmts);
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().asNumber() == 1);
+    try std.testing.expect(try interp.values.pop().value.asNumber() == 1);
+}
+
+fn copy(expr: Expr) *Expr {
+    //var newExpr = expr;
+    var newExpr = copy: {
+        break :copy switch (expr) {
+            .Unary => |u| Expr{ .Unary = .{ .operator = u.operator, .right = copy(u.right.*) }},
+            .Binary => |b| Expr{ .Binary = .{ .left = copy(b.left.*), .operator = b.operator, .right = copy(b.right.*) }},
+            .Literal => |l| if (l.value) |val| {
+                break :copy switch (val.value) {
+                    .Bool => |b| Expr.initLiteral(std.testing.allocator, b),
+                    .Number => |num| {
+                        std.debug.print("\nnum: {d}", .{num});
+                        break: copy Expr.initLiteral(std.testing.allocator, num);
+                    },
+                    .Nil => |nil| Expr.initLiteral(std.testing.allocator, nil),
+                    .String => |s| Expr.initLiteral(std.testing.allocator, s),
+                };
+            } else {
+                break :copy expr;
+            },
+            .Grouping => |g| Expr{ .Grouping = .{ .expression = copy(g.expression.*) }},
+        };
+    };
+    return &newExpr;
 }

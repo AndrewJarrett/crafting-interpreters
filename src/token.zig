@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const Allocator = std.mem.Allocator;
 const str = []const u8;
 
 pub const TokenType = enum {
@@ -54,15 +55,47 @@ pub const TokenType = enum {
     pub fn format(self: TokenType, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
+
         try writer.print("{s}", .{@tagName(self)});
     }
 };
 
-pub const ValueType = enum {
+pub const ValueTag = enum {
     Bool,
     Nil,
     Number,
     String,
+};
+
+pub const HeapValue = struct {
+    alloc: Allocator,
+    value: Value,
+
+    pub fn init(alloc: Allocator, value: anytype) *const HeapValue {
+        const val = Value.init(value);
+
+        //std.debug.print("\nHeapValue: {s}", .{valuePtr.*});
+
+        const ptr = alloc.create(HeapValue) catch unreachable;
+        ptr.alloc = alloc;
+        ptr.value = val;
+
+        //std.debug.print("\nHeapValue before return: {s}", .{ptr.*});
+
+        return ptr;
+    }
+
+    pub fn deinit(self: *const HeapValue) void {
+        //self.alloc.destroy(self.value);
+        self.alloc.destroy(self);
+    }
+
+    pub fn format(self: HeapValue, fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print("{s}", .{self.value});
+    }
 };
 
 pub const Value = union(enum) {
@@ -71,12 +104,19 @@ pub const Value = union(enum) {
     Number: f64,
     String: str,
 
-    pub fn init(valueType: ValueType, value: anytype) Value {
-        return switch (valueType) {
-            .Bool => Value{ .Bool = value },
-            .Nil => Value{ .Nil = {} },
-            .Number => Value{ .Number = value },
-            .String => Value{ .String = value },
+    pub fn init(value: anytype) Value {
+        //std.debug.print("\nvalue: {any}", .{value});
+        return switch (@TypeOf(value)) {
+            bool => Value{ .Bool = value },
+
+            usize, u8, u16, u32, u64, 
+            f16, f32, f64, 
+            i8, i16, i32, i64,
+            comptime_int, comptime_float => Value{ .Number = @as(f64, value) },
+
+            void => Value{ .Nil = {} },
+
+            else => Value{ .String = @as(str, value) }, // Any unsupported types will automatically try to be a string
         };
     }
 
@@ -141,11 +181,12 @@ pub const Value = union(enum) {
     pub fn format(self: Value, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
+
         switch (self) {
-            .Bool => |b| try writer.print("{}", .{b}),
+            .Bool => |b| if (b) try writer.print("true", .{}) else try writer.print("false", .{}),
             .Nil => |_| try writer.print("nil", .{}),
             .Number => |n| try writer.print("{d}", .{n}),
-            .String => |s| try writer.print("{s}", .{s}),
+            .String => |s| try writer.print("\"{s}\"", .{s}),
         }
     }
 };
@@ -158,18 +199,24 @@ pub const ValueError = error {
 };
 
 pub const Token = struct {
+    alloc: Allocator,
     tokenType: TokenType,
     lexeme: str,
-    literal: ?Value,
+    literal: ?*const HeapValue,
     line: usize,
 
-    pub fn init(tokenType: TokenType, lexeme: str, literal: ?Value, line: usize) Token {
+    pub fn init(alloc: Allocator, tokenType: TokenType, lexeme: str, literal: anytype, line: usize) Token {
         return Token{
+            .alloc = alloc,
             .tokenType = tokenType,
             .lexeme = lexeme,
-            .literal = literal,
+            .literal = if (@TypeOf(literal) == @TypeOf(null)) null else HeapValue.init(alloc, literal),
             .line = line,
         };
+    }
+
+    pub fn deinit(self: *Token) void {
+        if (self.literal) |lit| lit.deinit();
     }
 
     pub fn format(self: Token, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -181,12 +228,8 @@ pub const Token = struct {
 };
 
 test "init a new token" {
-    const token = Token.init(
-        TokenType.AND,
-        "and",
-        null,
-        1,
-    );
+    var token = Token.init(std.testing.allocator, .AND, "and", null, 1);
+    defer token.deinit();
 
     try std.testing.expect(@TypeOf(token) == Token);
     try std.testing.expect(token.tokenType == TokenType.AND);
@@ -196,12 +239,8 @@ test "init a new token" {
 }
 
 test "print the token" {
-    const token = Token.init(
-        TokenType.WHILE,
-        "while",
-        null,
-        420, // Take a toke(n)
-    );
+    var token = Token.init(std.testing.allocator, .WHILE, "while", null, 420);
+    defer token.deinit();
 
     const expected: str = "WHILE while null";
     var tokenBuffer: [expected.len]u8 = undefined;
@@ -211,12 +250,12 @@ test "print the token" {
 }
 
 test "print a number" {
-    const token = Token.init(
-        TokenType.NUMBER,
-        "1",
-        Value{ .Number = @as(f64, 1) },
-        2,
-    );
+    //const value = HeapValue.init(std.testing.allocator, 1);
+    //std.debug.print("\nValue in test: {s}", .{value});
+    //defer value.deinit();
+
+    var token = Token.init(std.testing.allocator, .NUMBER, "1", 1, 2);
+    defer token.deinit();
 
     const expected: str = "NUMBER 1 1";
     var tokenBuffer: [expected.len]u8 = undefined;
@@ -226,24 +265,60 @@ test "print a number" {
 }
 
 test "print a string" {
-    const token = Token.init(
-        TokenType.STRING,
-        "this is a string",
-        Value{ .String = "this is a string" },
-        3,
-    );
+    //const value = HeapValue.init(std.testing.allocator, "this is a string");
+    //defer value.deinit();
 
-    const expected: str = "STRING this is a string this is a string";
+    var token = Token.init(std.testing.allocator, .STRING, "this is a string", "this is a string", 3);
+    defer token.deinit();
+
+    const expected: str = "STRING this is a string \"this is a string\"";
     var tokenBuffer: [expected.len]u8 = undefined;
 
     _ = try std.fmt.bufPrint(&tokenBuffer, "{s}", .{token});
     try std.testing.expect(std.mem.eql(u8, &tokenBuffer, expected));
 }
 
+test "heap value" {
+    const boolTrue = HeapValue.init(std.testing.allocator, true);
+    defer boolTrue.deinit();
+    const boolFalse = HeapValue.init(std.testing.allocator, false);
+    defer boolFalse.deinit();
+    const num1 = HeapValue.init(std.testing.allocator, 1);
+    defer num1.deinit();
+    const num2 = HeapValue.init(std.testing.allocator, 42);
+    defer num2.deinit();
+    const nil1 = HeapValue.init(std.testing.allocator, {});
+    defer nil1.deinit();
+    const nil2 = HeapValue.init(std.testing.allocator, {});
+    defer nil2.deinit();
+    const string1 = HeapValue.init(std.testing.allocator, "hello");
+    defer string1.deinit();
+    const string2 = HeapValue.init(std.testing.allocator, "goodbye");
+    defer string2.deinit();
+
+
+    try std.testing.expect(boolTrue.value.isBool() == true);
+    try std.testing.expect(try boolTrue.value.asBool() == true);
+    try std.testing.expect(boolFalse.value.isBool() == true);
+    try std.testing.expect(try boolFalse.value.asBool() == false);
+    try std.testing.expect(num1.value.isNumber() == true);
+    try std.testing.expect(try num1.value.asNumber() == 1);
+    try std.testing.expect(num2.value.isNumber() == true);
+    try std.testing.expect(try num2.value.asNumber() == 42);
+    try std.testing.expect(nil1.value.isNil() == true);
+    try std.testing.expect(try nil1.value.asNil() == {});
+    try std.testing.expect(nil2.value.isNil() == true);
+    try std.testing.expect(try nil2.value.asNil() == {});
+    try std.testing.expect(string1.value.isString() == true);
+    try std.testing.expect(std.mem.eql(u8, try string1.value.asString(), "hello"));
+    try std.testing.expect(string2.value.isString() == true);
+    try std.testing.expect(std.mem.eql(u8, try string2.value.asString(), "goodbye"));
+}
+
 test "value bool" {
-    const boolTrue = Value { .Bool = true };
-    const boolFalse = Value { .Bool = false };
-    const notBool = Value { .Number = 3 };
+    const boolTrue = Value.init(true);
+    const boolFalse = Value.init(false);
+    const notBool = Value.init(3);
 
     try std.testing.expect(boolTrue.isBool());
     try std.testing.expect(try boolTrue.asBool());
@@ -254,8 +329,8 @@ test "value bool" {
 }
 
 test "value nil" {
-    const nil = Value { .Nil = {} };
-    const notNil = Value { .Number = 3 };
+    const nil = Value.init({});
+    const notNil = Value.init(3);
 
     try std.testing.expect(nil.isNil());
     try std.testing.expect(try nil.asNil() == {});
@@ -264,8 +339,8 @@ test "value nil" {
 }
 
 test "value number" {
-    const num = Value { .Number = 42 };
-    const NaN = Value { .Bool = false };
+    const num = Value.init(42);
+    const NaN = Value.init(false);
 
     try std.testing.expect(num.isNumber());
     try std.testing.expect(try num.asNumber() == @as(f64, 42));
@@ -274,8 +349,8 @@ test "value number" {
 }
 
 test "value string" {
-    const string = Value { .String = "this is cool yo" };
-    const notString = Value { .Number = 3 };
+    const string = Value.init("this is cool yo");
+    const notString = Value.init(3);
 
     try std.testing.expect(string.isString());
     try std.testing.expect(std.mem.eql(u8, try string.asString(), "this is cool yo"));
@@ -284,15 +359,15 @@ test "value string" {
 }
 
 test "value isTruthy" {
-    const truthy1 = Value { .Bool = true };
-    const truthy2 = Value { .Number = 0 };
-    const truthy3 = Value { .Number = 42 };
-    const truthy4 = Value { .Number = -42 };
-    const truthy5 = Value { .String = "" };
-    const truthy6 = Value { .String = "this is true?" };
+    const truthy1 = Value.init(true);
+    const truthy2 = Value.init(0);
+    const truthy3 = Value.init(42);
+    const truthy4 = Value.init(-42);
+    const truthy5 = Value.init("");
+    const truthy6 = Value.init("this is true?");
 
-    const falsey1 = Value { .Bool = false };
-    const falsey2 = Value { .Nil = {} };
+    const falsey1 = Value.init(false);
+    const falsey2 = Value.init({});
 
     try std.testing.expect(truthy1.isTruthy());
     try std.testing.expect(truthy2.isTruthy());
@@ -306,19 +381,19 @@ test "value isTruthy" {
 }
 
 test "value isEqual and isNotEqual" {
-    const nil1 = Value { .Nil = {} };
-    const nil2 = Value { .Nil = {} };
-    const number1 = Value { .Number = 42 };
-    const number2 = Value { .Number = 42 };
-    const number3 = Value { .Number = 0 };
-    const number4 = Value { .Number = -42 };
-    const number5 = Value { .Number = 0.00 };
-    const bool1 = Value { .Bool = true };
-    const bool2 = Value { .Bool = true };
-    const bool3 = Value { .Bool = false };
-    const string1 = Value { .String = "hello how are you today?" };
-    const string2 = Value { .String = "hello how are you today?" };
-    const string3 = Value { .String = "" };
+    const nil1 = Value.init({});
+    const nil2 = Value.init({});
+    const number1 = Value.init(42);
+    const number2 = Value.init(42);
+    const number3 = Value.init(0);
+    const number4 = Value.init(-42);
+    const number5 = Value.init(0.00);
+    const bool1 = Value.init(true);
+    const bool2 = Value.init(true);
+    const bool3 = Value.init(false);
+    const string1 = Value.init("hello how are you today?");
+    const string2 = Value.init("hello how are you today?");
+    const string3 = Value.init("");
 
     try std.testing.expect(nil1.isEqual(nil1));
     try std.testing.expect(nil1.isEqual(nil2));
@@ -356,38 +431,3 @@ test "value isEqual and isNotEqual" {
     try std.testing.expect(bool3.isNotEqual(number3));
     try std.testing.expect(bool3.isNotEqual(string3));
 }
-
-//test "value isEqual and isNotEqual errors" {
-//    const bool1 = Value { .Bool = true };
-//    const nil1 = Value { .Nil = {} };
-//    const string1 = Value { .String = "" };
-//    const number1 = Value { .Number = 0 };
-//
-//    try std.testing.expectError(ValueError.NotNil, nil1.isEqual(bool1));
-//    try std.testing.expectError(ValueError.NotNil, nil1.isEqual(string1));
-//    try std.testing.expectError(ValueError.NotNil, nil1.isEqual(number1));
-//    try std.testing.expectError(ValueError.NotNil, nil1.isNotEqual(bool1));
-//    try std.testing.expectError(ValueError.NotNil, nil1.isNotEqual(string1));
-//    try std.testing.expectError(ValueError.NotNil, nil1.isNotEqual(number1));
-//
-//    try std.testing.expectError(ValueError.NotABool, bool1.isEqual(nil1));
-//    try std.testing.expectError(ValueError.NotABool, bool1.isEqual(string1));
-//    try std.testing.expectError(ValueError.NotABool, bool1.isEqual(number1));
-//    try std.testing.expectError(ValueError.NotABool, bool1.isNotEqual(nil1));
-//    try std.testing.expectError(ValueError.NotABool, bool1.isNotEqual(string1));
-//    try std.testing.expectError(ValueError.NotABool, bool1.isNotEqual(number1));
-//
-//    try std.testing.expectError(ValueError.NotANumber, number1.isEqual(bool1));
-//    try std.testing.expectError(ValueError.NotANumber, number1.isEqual(string1));
-//    try std.testing.expectError(ValueError.NotANumber, number1.isEqual(nil1));
-//    try std.testing.expectError(ValueError.NotANumber, number1.isNotEqual(bool1));
-//    try std.testing.expectError(ValueError.NotANumber, number1.isNotEqual(string1));
-//    try std.testing.expectError(ValueError.NotANumber, number1.isNotEqual(nil1));
-//
-//    try std.testing.expectError(ValueError.NotAString, string1.isEqual(bool1));
-//    try std.testing.expectError(ValueError.NotAString, string1.isEqual(nil1));
-//    try std.testing.expectError(ValueError.NotAString, string1.isEqual(number1));
-//    try std.testing.expectError(ValueError.NotAString, string1.isNotEqual(bool1));
-//    try std.testing.expectError(ValueError.NotAString, string1.isNotEqual(nil1));
-//    try std.testing.expectError(ValueError.NotAString, string1.isNotEqual(number1));
-//}
