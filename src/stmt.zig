@@ -7,6 +7,7 @@ const Result = @import("result.zig").Result;
 const ResultError = @import("result.zig").ResultError;
 const Interpreter = @import("interpreter.zig").Interpreter;
 
+const Allocator = std.mem.Allocator;
 const str = []const u8;
 
 pub const Stmt = union(enum) {
@@ -42,10 +43,10 @@ pub const Stmt = union(enum) {
         };
     }
 
-    pub fn deinit(self: *const Stmt) void {
+    pub fn deinit(self: *const Stmt, alloc: Allocator) void {
         switch (self.*) {
-            .expression => |expr| expr.deinit(),
-            .print => |p| p.deinit(),
+            .expression => |expr| expr.deinit(alloc),
+            .print => |p| p.deinit(alloc),
         }
     }
 

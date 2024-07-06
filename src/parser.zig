@@ -207,23 +207,27 @@ pub const Expr = union(enum) {
         return ptr;
     }
 
-    pub fn deinit(self: *Expr) void {
+    pub fn deinit(self: *Expr, alloc: Allocator) void {
+        // Recursively deinit down the expression tree
         switch (self.*) {
             // Base case - the tree has to have literals at the leaf nodes
             .Literal => |lit| if (lit.value) |val| {
                 val.deinit();
             },
             .Binary => |b| {
-                b.left.deinit();
-                b.right.deinit();
+                b.left.deinit(alloc);
+                b.right.deinit(alloc);
             },
             .Unary => |u| {
-                u.right.deinit();
+                u.right.deinit(alloc);
             },
             .Grouping => |g| {
-                g.expression.deinit();
+                g.expression.deinit(alloc);
             },
         }
+
+        // Each expr should destory itself at the end
+        alloc.destroy(self);
     }
 
     pub fn evaluate(self: Expr, interp: *Interpreter) ResultError!Result(HeapValue) {

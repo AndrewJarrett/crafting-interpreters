@@ -54,7 +54,7 @@ pub const Interpreter = struct {
         self.values.deinit();
 
         while (self.statements.popOrNull()) |stmt| {
-            stmt.deinit();
+            stmt.deinit(self.statements.allocator);
         }
         self.statements.deinit();
     }
@@ -345,6 +345,7 @@ test "interpret grouping" {
 
 test "interpret literal" {
     const one = Expr.initLiteral(std.testing.allocator, 1);
+    //defer one.deinit(std.testing.allocator);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
     try stmts.append(Stmt.expression(one));
 
