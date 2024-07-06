@@ -250,10 +250,6 @@ test "print the token" {
 }
 
 test "print a number" {
-    //const value = HeapValue.init(std.testing.allocator, 1);
-    //std.debug.print("\nValue in test: {s}", .{value});
-    //defer value.deinit();
-
     var token = Token.init(std.testing.allocator, .NUMBER, "1", 1, 2);
     defer token.deinit();
 
@@ -265,9 +261,6 @@ test "print a number" {
 }
 
 test "print a string" {
-    //const value = HeapValue.init(std.testing.allocator, "this is a string");
-    //defer value.deinit();
-
     var token = Token.init(std.testing.allocator, .STRING, "this is a string", "this is a string", 3);
     defer token.deinit();
 

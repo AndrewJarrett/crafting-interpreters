@@ -344,12 +344,30 @@ test "isDigit" {
     }
 }
 
-test "number" {
+test "numbers" {
     const areNumbers: [3][]const u8 = .{
         "123",
         "123.4",
         "1",
     };
+
+    const src = "this can be whatever";
+    var scanner = Scanner.init(std.testing.allocator, src);
+    defer scanner.deinit();
+
+    for (areNumbers) |num| {
+        scanner.src = num;
+        scanner.current = 0;
+        scanner.start = 0;
+        try scanner.scanToken();
+        const token = scanner.tokens.getLastOrNull();
+        try std.testing.expect(token != null);
+        try std.testing.expect(std.mem.eql(u8, token.?.lexeme, num));
+        try std.testing.expect(token.?.tokenType == .NUMBER);
+    }
+}
+
+test "not numbers" {
     const notNumbers: [5][]const u8 = .{
         "+",
         "-",
@@ -362,23 +380,12 @@ test "number" {
     var scanner = Scanner.init(std.testing.allocator, src);
     defer scanner.deinit();
 
-    for (areNumbers) |num| {
-        scanner.src = num;
-        scanner.current = 0;
-        scanner.start = 0;
-        try scanner.scanToken();
-        const token = scanner.tokens.popOrNull();
-        try std.testing.expect(token != null);
-        try std.testing.expect(std.mem.eql(u8, token.?.lexeme, num));
-        try std.testing.expect(token.?.tokenType == .NUMBER);
-    }
-
     for (notNumbers) |num| {
         scanner.src = num;
         scanner.current = 0;
         scanner.start = 0;
         try scanner.scanToken();
-        while (scanner.tokens.popOrNull()) |token| {
+        for (scanner.tokens.items) |token| {
             try std.testing.expect(token.tokenType != .NUMBER);
         }
     }

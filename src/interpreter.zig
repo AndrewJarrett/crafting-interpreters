@@ -79,8 +79,6 @@ test "interpret addition" {
     const plus = Token.init(std.testing.allocator, .PLUS, "+", null, 1);
     const one = Expr.initLiteral(std.testing.allocator, 1);
     const one2 = Expr.initLiteral(std.testing.allocator, 1);
-    //var one2 = one.*;
-    //defer one.deinit();
     const expr = Expr.initBinary(std.testing.allocator, one, plus, one2);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
     try stmts.append(Stmt.expression(expr));
