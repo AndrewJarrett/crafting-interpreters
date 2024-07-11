@@ -21,20 +21,19 @@ const ArrayList = std.ArrayList;
 pub const Interpreter = struct {
     allocator: Allocator,
     statements: ArrayList(Stmt),
-    values: ArrayList(*const HeapValue),
+    values: ArrayList(*HeapValue),
 
     pub fn init(allocator: Allocator, statements: ArrayList(Stmt)) Interpreter {
         return Interpreter{
             .allocator = allocator,
             .statements = statements,
-            .values = ArrayList(*const HeapValue).init(allocator),
+            .values = ArrayList(*HeapValue).init(allocator),
         };
     }
 
     pub fn interpret(self: *Interpreter) !void {
         for (self.statements.items) |stmt| {
             const result = try stmt.evaluate(self);
-            std.debug.print("\nStmt: {s}; Result: {s}", .{stmt, result});
 
             switch (result) {
                 .ok => |val| std.log.info("Value: {s}", .{val}),
@@ -42,7 +41,6 @@ pub const Interpreter = struct {
             }
 
             const value = result.unwrap() catch return InterpreterError.InterpreterError;
-            std.debug.print("\nValue: {s}; Address: {*}", .{value.*, value});
             try self.values.append(value);
         }
     }
@@ -87,7 +85,7 @@ test "interpret addition" {
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().value.asNumber() == 2);
+    try std.testing.expect(try interp.values.getLast().value.asNumber() == 2);
 }
 
 test "interpret subtraction" {
@@ -102,7 +100,7 @@ test "interpret subtraction" {
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().value.asNumber() == 0);
+    try std.testing.expect(try interp.values.getLast().value.asNumber() == 0);
 }
 
 test "interpret multiplication" {
@@ -117,7 +115,7 @@ test "interpret multiplication" {
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().value.asNumber() == 16);
+    try std.testing.expect(try interp.values.getLast().value.asNumber() == 16);
 }
 
 test "interpret division" {
@@ -132,7 +130,7 @@ test "interpret division" {
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().value.asNumber() == 1);
+    try std.testing.expect(try interp.values.getLast().value.asNumber() == 1);
 }
 
 test "interpret equality operators" {
@@ -151,7 +149,6 @@ test "interpret equality operators" {
     //const newOne = copy(one);
     const newNewOne = Expr.initLiteral(std.testing.allocator, 1);
     const oneGtOne = Expr.initBinary(std.testing.allocator, one, gt, newNewOne);
-    std.debug.print("\n&one: {*}; one: {s}; &copy(one): {*}; copy(one): {s}", .{one, one, newNewOne, newNewOne});
     //var oneGtTwo = Expr.initBinary(copy(one), gt, &two);
     //var twoGtOne = Expr.initBinary(copy(two), gt, copy(one));
     //var oneGteOne = Expr.initBinary(copy(one), gte, copy(one));
@@ -211,7 +208,7 @@ test "interpret equality operators" {
     //try std.testing.expect(try interp.values.pop().value.asBool() == true); // 1 >= 1
     //try std.testing.expect(try interp.values.pop().value.asBool() == true); // 2 > 1
     //try std.testing.expect(try interp.values.pop().value.asBool() == false); // 1 > 2
-    try std.testing.expect(try interp.values.pop().value.asBool() == false); // 1 > 1
+    try std.testing.expect(try interp.values.getLast().value.asBool() == false); // 1 > 1
 }
 
 test "interpret string concat" {
@@ -226,7 +223,7 @@ test "interpret string concat" {
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(std.mem.eql(u8, try interp.values.pop().value.asString(), "onetwo"));
+    try std.testing.expect(std.mem.eql(u8, try interp.values.getLast().value.asString(), "onetwo"));
 }
 
 test "interpret binary error" {
@@ -300,12 +297,16 @@ test "interpret unary operations" {
     defer interp.deinit();
     try interp.interpret();
 
-    // Test in reverse order (popping values off the stack)
-    try std.testing.expect(try interp.values.pop().value.asNumber() == -1); // -1
-    try std.testing.expect(try interp.values.pop().value.asBool() == false); // !"string"
-    try std.testing.expect(try interp.values.pop().value.asBool() == true); // !nil
-    try std.testing.expect(try interp.values.pop().value.asBool() == false); // !true
-    try std.testing.expect(try interp.values.pop().value.asBool() == true); // !false
+    // Expected results in order
+    const expected = .{ false, true, false, true, false, -1 };
+
+    inline for (interp.values.items, 0..expected.len) |item, i| {
+        const value = switch (@TypeOf(expected[i])) {
+            bool => try item.value.asBool(),
+            else => try item.value.asNumber(),
+        };
+        try std.testing.expect(value == expected[i]);
+    }
 }
 
 test "interpret bad unary expression" {
@@ -326,9 +327,7 @@ test "interpret bad unary expression" {
 test "interpret grouping" {
     const plus = Token.init(std.testing.allocator, .PLUS, "+", null, 1);
     const one = Expr.initLiteral(std.testing.allocator, 1);
-    //defer one.deinit();
     const one2 = Expr.initLiteral(std.testing.allocator, 1);
-    //defer one2.deinit();
     const onePlusOne = Expr.initBinary(std.testing.allocator, one, plus, one2);
     const group = Expr.initGrouping(std.testing.allocator, onePlusOne);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
@@ -338,12 +337,11 @@ test "interpret grouping" {
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().value.asNumber() == 2);
+    try std.testing.expect(try interp.values.getLast().value.asNumber() == 2);
 }
 
 test "interpret literal" {
     const one = Expr.initLiteral(std.testing.allocator, 1);
-    //defer one.deinit(std.testing.allocator);
     var stmts = ArrayList(Stmt).init(std.testing.allocator);
     try stmts.append(Stmt.expression(one));
 
@@ -351,7 +349,7 @@ test "interpret literal" {
     defer interp.deinit();
     try interp.interpret();
 
-    try std.testing.expect(try interp.values.pop().value.asNumber() == 1);
+    try std.testing.expect(try interp.values.getLast().value.asNumber() == 1);
 }
 
 fn copy(expr: Expr) *Expr {

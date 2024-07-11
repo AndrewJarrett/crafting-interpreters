@@ -194,7 +194,6 @@ pub const Scanner = struct {
     }
 
     fn addToken(self: *Self, tokenType: TT) !void {
-        std.debug.print("\nToken Type: {s}", .{tokenType});
         try self.addTokenWithLiteral(tokenType, null);
     }
 
@@ -203,7 +202,6 @@ pub const Scanner = struct {
         if (tokenType != TT.EOF and self.current <= self.src.len) {
             text = self.src[self.start..self.current];
         }
-        std.debug.print("\nTokenType: {s}; Len: {d}; Start: {d}; Current: {d}; Text: {s}", .{tokenType, self.src.len, self.start, self.current, text});
         //std.log.info("TokenType: {s}; Len: {d}; Start: {d}; Current: {d}; Text: {d}", .{tokenType, self.src.len, self.start, self.current, text});
         const tokenPtr = try self.allocator.create(Token);
         tokenPtr.* = Token.init(self.allocator, tokenType, text, literal, self.line);
@@ -265,10 +263,6 @@ test "scanToken" {
 
     try scanner.scanToken();
     try std.testing.expect(scanner.current == 2);
-
-    for (scanner.tokens.items) |item| {
-        std.debug.print("\nItem: {s}", .{item});
-    }
 
     try std.testing.expect(scanner.tokens.items.len == 2);
     try std.testing.expect(std.mem.eql(u8, scanner.tokens.items[0].lexeme, "("));
@@ -431,7 +425,7 @@ test "isAlphaNumeric" {
     }
 }
 
-test "identifier" {
+test "identifiers" {
     const areIdentifiers: [5][]const u8 = .{
         "asdf",
         "_thisIsValid",
@@ -439,6 +433,24 @@ test "identifier" {
         "_h_e_l_l_o_",
         "c",
     };
+
+    const src = "this can be whatever";
+    var scanner = Scanner.init(std.testing.allocator, src);
+    defer scanner.deinit();
+
+    for (areIdentifiers) |iden| {
+        scanner.src = iden;
+        scanner.current = 0;
+        scanner.start = 0;
+        try scanner.scanToken();
+        const token = scanner.tokens.getLastOrNull();
+        try std.testing.expect(token != null);
+        try std.testing.expect(std.mem.eql(u8, token.?.lexeme, iden));
+        try std.testing.expect(token.?.tokenType == TT.IDENTIFIER);
+    }
+}
+
+test "not identifiers" {
     const notIdentifiers: [5][]const u8 = .{
         "420",
         "+1234",
@@ -451,22 +463,12 @@ test "identifier" {
     var scanner = Scanner.init(std.testing.allocator, src);
     defer scanner.deinit();
 
-    for (areIdentifiers) |iden| {
-        scanner.src = iden;
-        scanner.current = 0;
-        scanner.start = 0;
-        try scanner.scanToken();
-        const token = scanner.tokens.popOrNull();
-        try std.testing.expect(token != null);
-        try std.testing.expect(std.mem.eql(u8, token.?.lexeme, iden));
-        try std.testing.expect(token.?.tokenType == TT.IDENTIFIER);
-    }
     for (notIdentifiers) |other| {
         scanner.src = other;
         scanner.current = 0;
         scanner.start = 0;
         try scanner.scanToken();
-        while (scanner.tokens.popOrNull()) |token| {
+        for (scanner.tokens.items) |token| {
             try std.testing.expect(token.tokenType != TT.IDENTIFIER);
         }
     }

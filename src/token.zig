@@ -70,23 +70,32 @@ pub const ValueTag = enum {
 pub const HeapValue = struct {
     alloc: Allocator,
     value: Value,
+    freeValue: bool,
 
-    pub fn init(alloc: Allocator, value: anytype) *const HeapValue {
+    pub fn init(alloc: Allocator, value: anytype) *HeapValue {
         const val = Value.init(value);
-
-        //std.debug.print("\nHeapValue: {s}", .{valuePtr.*});
 
         const ptr = alloc.create(HeapValue) catch unreachable;
         ptr.alloc = alloc;
         ptr.value = val;
-
-        //std.debug.print("\nHeapValue before return: {s}", .{ptr.*});
+        ptr.freeValue = false;
 
         return ptr;
     }
 
-    pub fn deinit(self: *const HeapValue) void {
+    pub fn setFreeValue(self: *HeapValue, freeValue: bool) *HeapValue {
+        self.freeValue = freeValue;
+        return self;
+    }
+
+    pub fn deinit(self: *HeapValue) void {
         //self.alloc.destroy(self.value);
+        if (self.freeValue) {
+            switch (self.value) {
+                .String => |s| self.alloc.free(s),
+                else => {},
+            }
+        }
         self.alloc.destroy(self);
     }
 
@@ -202,7 +211,7 @@ pub const Token = struct {
     alloc: Allocator,
     tokenType: TokenType,
     lexeme: str,
-    literal: ?*const HeapValue,
+    literal: ?*HeapValue,
     line: usize,
 
     pub fn init(alloc: Allocator, tokenType: TokenType, lexeme: str, literal: anytype, line: usize) Token {
@@ -215,7 +224,7 @@ pub const Token = struct {
         };
     }
 
-    pub fn deinit(self: *Token) void {
+    pub fn deinit(self: *const Token) void {
         if (self.literal) |lit| lit.deinit();
     }
 

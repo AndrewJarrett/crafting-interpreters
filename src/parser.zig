@@ -61,8 +61,13 @@ pub const Binary = struct {
     right: *Expr,
 
     fn evaluate(self: Binary, interp: *Interpreter) ResultError!Result(HeapValue) {
-        const left = (try (try self.left.evaluate(interp)).unwrap()).value;
-        const right = (try (try self.right.evaluate(interp)).unwrap()).value;
+        const leftResult = try self.left.evaluate(interp);
+        defer leftResult.deinit(); // Free temporary processing result
+        const left = (try leftResult.unwrap()).value;
+
+        const rightResult = try self.right.evaluate(interp);
+        defer rightResult.deinit(); // Free temporary processing result
+        const right = (try rightResult.unwrap()).value;
 
         return switch (self.operator.tokenType) {
             .GREATER => self.getNumberResult(interp, &left, &right),
@@ -116,7 +121,7 @@ pub const Binary = struct {
                     const result = std.fmt.allocPrint(interp.allocator, "{s}{s}", .{l, r}) catch {
                         return Result(HeapValue).err(Error.init(self.operator, "Error allocating space for concatenated string"));
                     };
-                    return Result(HeapValue).ok(HeapValue.init(interp.allocator, result));
+                    return Result(HeapValue).ok(HeapValue.init(interp.allocator, result).setFreeValue(true));
                 },
                 else => Result(HeapValue).err(Error.init(self.operator, "Unexpected operator for a binary expression with two strings")),
             };
@@ -131,7 +136,9 @@ pub const Unary = struct {
     right: *Expr,
 
     fn evaluate(self: Unary, interp: *Interpreter) ResultError!Result(HeapValue) {
-        const right = (try (try self.right.evaluate(interp)).unwrap()).value;
+        const rightResult = try self.right.evaluate(interp);
+        defer rightResult.deinit(); // Free temporary processing results
+        const right = (try rightResult.unwrap()).value;
 
         return switch (self.operator.tokenType) {
             .BANG => Result(HeapValue).ok(HeapValue.init(interp.allocator, !right.isTruthy())),
@@ -156,12 +163,19 @@ pub const Unary = struct {
 };
 
 pub const Literal = struct {
-    value: ?*const HeapValue = null,
+    value: ?*HeapValue = null,
 
     fn evaluate(self: Literal, interp: *Interpreter) Result(HeapValue) {
-        _ = interp;
         if (self.value) |value| {
-            return Result(HeapValue).ok(value);
+            // Need to copy the value to prevent a double-free in case the
+            // result of an expression is the statement itself
+            const copy = switch (value.value) {
+                .Bool => HeapValue.init(interp.allocator, value.value.asBool() catch unreachable),
+                .Nil => HeapValue.init(interp.allocator, value.value.asNil() catch unreachable),
+                .Number => HeapValue.init(interp.allocator, value.value.asNumber() catch unreachable),
+                .String => HeapValue.init(interp.allocator, value.value.asString() catch unreachable),
+            };
+            return Result(HeapValue).ok(copy);
         } else {
             return Result(HeapValue).err(Error.init(null, "The literal value was null."));
         }
@@ -226,7 +240,7 @@ pub const Expr = union(enum) {
             },
         }
 
-        // Each expr should destory itself at the end
+        // Each expr should destroy itself at the end
         alloc.destroy(self);
     }
 
@@ -485,7 +499,13 @@ const ParseError = error{
 
 test "Parser.init()" {
     var tokens = ArrayList(*const Token).init(std.testing.allocator);
-    defer tokens.deinit();
+    defer {
+        for (tokens.items) |tok| {
+            tok.deinit();
+        }
+        tokens.deinit();
+    }
+
     try tokens.append(&Token.init(std.testing.allocator, .PLUS, "+", null, 1));
 
     var parser = Parser.init(std.testing.allocator, &tokens);
@@ -498,7 +518,13 @@ test "Parser.init()" {
 
 test "Parse error no expression" {
     var tokens = ArrayList(*const Token).init(std.testing.allocator);
-    defer tokens.deinit();
+    defer {
+        for (tokens.items) |tok| {
+            tok.deinit();
+        }
+        tokens.deinit();
+    }
+
     try tokens.append(&Token.init(std.testing.allocator, TT.PLUS, "+", null, 1));
 
     var parser = Parser.init(std.testing.allocator, &tokens);
@@ -508,7 +534,12 @@ test "Parse error no expression" {
 
 test "Parser success" {
     var tokens = ArrayList(*const Token).init(std.testing.allocator);
-    defer tokens.deinit();
+    defer {
+        for (tokens.items) |tok| {
+            tok.deinit();
+        }
+        tokens.deinit();
+    }
 
     try tokens.append(&Token.init(std.testing.allocator, .NUMBER, "1", 1.0, 1));
     try tokens.append(&Token.init(std.testing.allocator, .PLUS, "+", null, 1));
@@ -529,7 +560,8 @@ test "Parser success" {
 
 test "Expr: 1" {
     const expr = Expr.initLiteral(std.testing.allocator, 1.0);
-    std.debug.print("\nExpr: {*}", .{&expr});
+    defer expr.deinit(std.testing.allocator);
+
     try std.testing.expect(testExprMatchesExpected("1", expr.*));
 }
 
@@ -540,6 +572,8 @@ test "Expr: (+ 1 2)" {
         Token.init(std.testing.allocator, TT.PLUS, "+", null, 1), 
         Expr.initLiteral(std.testing.allocator, 2.0)
     );
+    defer expr.deinit(std.testing.allocator);
+
     try std.testing.expect(testExprMatchesExpected("(+ 1 2)", expr.*));
 }
 
@@ -554,6 +588,8 @@ test "Expr: (* (- 123) (group 45.67))" {
         mult,
         Expr.initGrouping(std.testing.allocator, num2)
     );
+    defer expr.deinit(std.testing.allocator);
+
     try std.testing.expect(testExprMatchesExpected("(* (- 123) (group 45.67))", expr.*));
 }
 
