@@ -1,7 +1,6 @@
 const std = @import("std");
 
 const Expr = @import("parser.zig").Expr;
-const ET = @import("parser.zig").ExprType;
 const Binary = @import("parser.zig").Binary;
 const Unary = @import("parser.zig").Unary;
 const Literal = @import("parser.zig").Literal;
@@ -9,8 +8,8 @@ const Grouping = @import("parser.zig").Grouping;
 const Result = @import("result.zig").Result;
 const Error = @import("result.zig").Error;
 const ResultError = @import("result.zig").ResultError;
-const Value = @import("token.zig").Value;
-const HeapValue = @import("token.zig").HeapValue;
+const Value = @import("value.zig").Value;
+const HeapValue = @import("value.zig").HeapValue;
 const Token = @import("token.zig").Token;
 const Lexer = @import("lexer.zig").Lexer;
 const Stmt = @import("stmt.zig").Stmt;
@@ -21,13 +20,13 @@ const ArrayList = std.ArrayList;
 pub const Interpreter = struct {
     allocator: Allocator,
     statements: ArrayList(Stmt),
-    values: ArrayList(*HeapValue),
+    values: ArrayList(*const HeapValue),
 
     pub fn init(allocator: Allocator, statements: ArrayList(Stmt)) Interpreter {
         return Interpreter{
             .allocator = allocator,
             .statements = statements,
-            .values = ArrayList(*HeapValue).init(allocator),
+            .values = ArrayList(*const HeapValue).init(allocator),
         };
     }
 

@@ -1,12 +1,9 @@
 const std = @import("std");
 const Token = @import("token.zig").Token;
 const TT = @import("token.zig").TokenType;
-const Value = @import("token.zig").Value;
-const HeapValue = @import("token.zig").HeapValue;
 const Lexer = @import("lexer.zig").Lexer;
 
 const ArrayList = std.ArrayList;
-const ArrayListAligned = std.array_list.ArrayListAligned;
 const Allocator = std.mem.Allocator;
 const str = []const u8;
 

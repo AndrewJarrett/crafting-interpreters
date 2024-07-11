@@ -1,8 +1,7 @@
 const std = @import("std");
 
 const Expr = @import("parser.zig").Expr;
-const Value = @import("token.zig").Value;
-const HeapValue = @import("token.zig").HeapValue;
+const HeapValue = @import("value.zig").HeapValue;
 const Result = @import("result.zig").Result;
 const ResultError = @import("result.zig").ResultError;
 const Interpreter = @import("interpreter.zig").Interpreter;

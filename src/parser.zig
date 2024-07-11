@@ -1,11 +1,9 @@
 const std = @import("std");
-const Token = @import("token.zig").Token;
-const Nil = @import("token.zig").Nil;
-const Value = @import("token.zig").Value;
-const HeapValue = @import("token.zig").HeapValue;
 const Lexer = @import("lexer.zig").Lexer;
+const Token = @import("token.zig").Token;
 const TT = @import("token.zig").TokenType;
-const VT = @import("token.zig").ValueType;
+const Value = @import("value.zig").Value;
+const HeapValue = @import("value.zig").HeapValue;
 const Interpreter = @import("interpreter.zig").Interpreter;
 const Result = @import("result.zig").Result;
 const Error = @import("result.zig").Error;
@@ -121,7 +119,7 @@ pub const Binary = struct {
                     const result = std.fmt.allocPrint(interp.allocator, "{s}{s}", .{l, r}) catch {
                         return Result(HeapValue).err(Error.init(self.operator, "Error allocating space for concatenated string"));
                     };
-                    return Result(HeapValue).ok(HeapValue.init(interp.allocator, result).setFreeValue(true));
+                    return Result(HeapValue).ok(HeapValue.initWithFree(interp.allocator, result, true));
                 },
                 else => Result(HeapValue).err(Error.init(self.operator, "Unexpected operator for a binary expression with two strings")),
             };
@@ -163,7 +161,7 @@ pub const Unary = struct {
 };
 
 pub const Literal = struct {
-    value: ?*HeapValue = null,
+    value: ?*const HeapValue = null,
 
     fn evaluate(self: Literal, interp: *Interpreter) Result(HeapValue) {
         if (self.value) |value| {

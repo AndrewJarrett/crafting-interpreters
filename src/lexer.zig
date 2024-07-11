@@ -6,7 +6,6 @@ const Allocator = std.mem.Allocator;
 const ExitStatus = @import("main.zig").ExitStatus;
 const Scanner = @import("scanner.zig").Scanner;
 const Token = @import("token.zig").Token;
-const Value = @import("token.zig").Value;
 const Expr = @import("parser.zig").Expr;
 const Parser = @import("parser.zig").Parser;
 const InterpreterError = @import("interpreter.zig").InterpreterError;

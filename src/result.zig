@@ -8,10 +8,10 @@ pub fn Result(comptime T: type) type {
     return union(enum) {
         const Self = @This();
 
-        ok: *T,
+        ok: *const T,
         err: Error,
 
-        pub fn ok(payload: *T) Self {
+        pub fn ok(payload: *const T) Self {
             return Self {
                 .ok = payload,
             };
@@ -23,7 +23,7 @@ pub fn Result(comptime T: type) type {
             };
         }
 
-        pub fn unwrap(self: Self) ResultError!*T {
+        pub fn unwrap(self: Self) ResultError!*const T {
             switch (self) {
                 .ok => |k| {
                     //std.debug.print("\nUnwrap: {s}", .{k.*});
