@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Expr = @import("parser.zig").Expr;
+const Expr = @import("expr.zig").Expr;
 const HeapValue = @import("value.zig").HeapValue;
 const Result = @import("result.zig").Result;
 const ResultError = @import("result.zig").ResultError;

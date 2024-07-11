@@ -1,10 +1,10 @@
 const std = @import("std");
 
-const Expr = @import("parser.zig").Expr;
-const Binary = @import("parser.zig").Binary;
-const Unary = @import("parser.zig").Unary;
-const Literal = @import("parser.zig").Literal;
-const Grouping = @import("parser.zig").Grouping;
+const Expr = @import("expr.zig").Expr;
+const Binary = @import("expr.zig").Binary;
+const Unary = @import("expr.zig").Unary;
+const Literal = @import("expr.zig").Literal;
+const Grouping = @import("expr.zig").Grouping;
 const Result = @import("result.zig").Result;
 const Error = @import("result.zig").Error;
 const ResultError = @import("result.zig").ResultError;
