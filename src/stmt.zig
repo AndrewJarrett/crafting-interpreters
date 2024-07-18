@@ -2,6 +2,7 @@ const std = @import("std");
 
 const Expr = @import("expr.zig").Expr;
 const HeapValue = @import("value.zig").HeapValue;
+const Token = @import("token.zig").Token;
 const Result = @import("result.zig").Result;
 const ResultError = @import("result.zig").ResultError;
 const Interpreter = @import("interpreter.zig").Interpreter;
@@ -9,19 +10,47 @@ const Interpreter = @import("interpreter.zig").Interpreter;
 const Allocator = std.mem.Allocator;
 const str = []const u8;
 
+pub const Var = struct {
+    token: Token,
+    initializer: ?*Expr,
+
+    pub fn init(token: Token, initializer: ?*Expr) *Var {
+        var variable = Var{
+            .token = token,
+            .initializer = initializer,
+        };
+
+        return &variable;
+    }
+
+    pub fn format(self: Var, comptime fmt: str, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print("{s} {?}", .{self.token, self.initializer});
+    }
+};
+
 pub const Stmt = union(enum) {
     expression: *Expr,
     print: *Expr,
+    variable: *Var,
+
+    pub fn expression(expr: *Expr) Stmt {
+        return Stmt{
+            .expression = expr,
+        };
+    }
 
     pub fn print(expr: *Expr) Stmt {
         return Stmt{
             .print = expr,
         };
     }
-
-    pub fn expression(expr: *Expr) Stmt {
+    
+    pub fn variable(token: Token, initializer: ?*Expr) Stmt {
         return Stmt{
-            .expression = expr,
+            .variable = Var.init(token, initializer)
         };
     }
 
@@ -39,6 +68,9 @@ pub const Stmt = union(enum) {
 
                 return result;
             },
+            .variable => {
+                return try self.variable.initializer.?.evaluate(interp);
+            },
         };
     }
 
@@ -46,6 +78,7 @@ pub const Stmt = union(enum) {
         switch (self.*) {
             .expression => |expr| expr.deinit(alloc),
             .print => |p| p.deinit(alloc),
+            else => {},
         }
     }
 
@@ -56,6 +89,7 @@ pub const Stmt = union(enum) {
         switch (self) {
             .expression => |e| try writer.print("{s}", .{e}),
             .print => |p| try writer.print("{s}", .{p}),
+            .variable => |v| try writer.print("{s}", .{v}),
         }
     }
 };

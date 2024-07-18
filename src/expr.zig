@@ -147,11 +147,25 @@ pub const Grouping = struct {
     }
 };
 
+pub const Variable = struct {
+    name: Token,
+
+    fn evaluate(self: Variable, interp: *Interpreter) ResultError!Result(HeapValue){
+        _ = interp;
+        if (self.name.literal) |val| {
+            return Result(HeapValue).ok(val);
+        } else {
+            return Result(HeapValue).err(Error.init(self.name, "Expected a literal value for the variable"));
+        }
+    }
+};
+
 pub const Expr = union(enum) {
     Binary: Binary,
     Unary: Unary,
     Literal: Literal,
     Grouping: Grouping,
+    Variable: Variable,
 
     pub fn initBinary(alloc: Allocator, left: *Expr, operator: Token, right: *Expr) *Expr {
         const ptr = alloc.create(Expr) catch unreachable;
@@ -178,6 +192,12 @@ pub const Expr = union(enum) {
         return ptr;
     }
 
+    pub fn initVariable(alloc: Allocator, name: Token) *Expr {
+        const ptr = alloc.create(Expr) catch unreachable;
+        ptr.* = Expr{ .Variable = Variable{ .name = name }};
+        return ptr;
+    }
+
     pub fn deinit(self: *Expr, alloc: Allocator) void {
         // Recursively deinit down the expression tree
         switch (self.*) {
@@ -195,6 +215,9 @@ pub const Expr = union(enum) {
             .Grouping => |g| {
                 g.expression.deinit(alloc);
             },
+            .Variable => |v| {
+                v.name.deinit();
+            }
         }
 
         // Each expr should destroy itself at the end
@@ -207,6 +230,7 @@ pub const Expr = union(enum) {
             .Unary => try self.Unary.evaluate(interp),
             .Literal => self.Literal.evaluate(interp),
             .Grouping => try self.Grouping.evaluate(interp),
+            .Variable => try self.Variable.evaluate(interp),
         };
     }
 
@@ -219,6 +243,7 @@ pub const Expr = union(enum) {
             .Unary => |u| try writer.print("({s} {s})", .{ u.operator.lexeme, u.right.* }),
             .Literal => |l| try writer.print("{?}", .{l.value}),
             .Grouping => |g| try writer.print("(group {s})", .{g.expression}),
+            .Variable => |v| try writer.print("var {s}", .{v.name}),
         }
     }
 };

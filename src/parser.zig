@@ -58,10 +58,28 @@ pub const Parser = struct {
 
     pub fn parse(self: *Parser) ParseError!ArrayList(Stmt) {
         while (!self.isAtEnd()) {
-            const result = try self.statement();
+            const result = try self.declaration();
             try self.statements.append(result);
         }
         return self.statements;
+    }
+
+    fn declaration(self: *Parser) ParseError!Stmt {
+        errdefer self.synchronize();
+
+        return if (self.match(.{ .VAR })) try self.varDeclaration() else try self.statement();
+    }
+
+    fn varDeclaration(self: *Parser) ParseError!Stmt {
+        const name = try self.consume(.IDENTIFIER, "Expect variable name.", ParseError.MissingVariableName);
+
+        var initializer: ?*Expr = null;
+        if (self.match(.{ .EQUAL })) {
+            initializer = try self.expression();
+        }
+
+        _ = try self.consume(.SEMICOLON, "Expect ';' after variable declaration.", ParseError.MissingSemicolon);
+        return Stmt.variable(name, initializer);
     }
 
     fn statement(self: *Parser) ParseError!Stmt {
@@ -159,6 +177,10 @@ pub const Parser = struct {
             return self.createExpr(Literal{ .value = self.previous().literal });
         }
 
+        if (self.match(.{ .IDENTIFIER })) {
+            return self.createExpr(Expr.initVariable(self.allocator, self.previous())); 
+        }
+
         if (self.match(.{.LEFT_PAREN})) {
             const expr = try self.expression();
             _ = try self.consume(.RIGHT_PAREN, "Expect ')' after expression.", ParseError.MissingParens);
@@ -213,7 +235,7 @@ pub const Parser = struct {
         return self.tokens.items[self.current - 1].*;
     }
 
-    fn synchronize(self: Parser) void {
+    fn synchronize(self: *Parser) void {
         _ = self.advance();
 
         while (!self.isAtEnd()) {
@@ -240,6 +262,7 @@ pub const Parser = struct {
 const ParseError = error{
     MissingParens,
     MissingSemicolon,
+    MissingVariableName,
     NoExpression,
     OutOfMemory,
 };
@@ -273,6 +296,7 @@ test "Parse error no expression" {
     }
 
     try tokens.append(&Token.init(std.testing.allocator, .PLUS, "+", null, 1));
+    try tokens.append(&Token.init(std.testing.allocator, .EOF, "", null, 1));
 
     var parser = Parser.init(std.testing.allocator, &tokens);
     defer parser.deinit();
