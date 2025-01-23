@@ -8,7 +8,7 @@ const Allocator = std.mem.Allocator;
 const str = []const u8;
 
 // Setup the keywords as a static final hash map
-const keywords = std.ComptimeStringMap(TT, .{
+const keywords = std.StaticStringMap(TT).initComptime(.{
     .{ "and", TT.AND },
     .{ "class", TT.CLASS },
     .{ "else", TT.ELSE },

@@ -217,10 +217,10 @@ pub const Expr = union(enum) {
             },
             .Variable => |v| {
                 v.name.deinit();
-            }
+            },
         }
 
-        // Each expr should destroy itself at the end
+        // Must destroy self from the heap
         alloc.destroy(self);
     }
 

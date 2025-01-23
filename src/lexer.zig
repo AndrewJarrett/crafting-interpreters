@@ -16,6 +16,7 @@ const str = []const u8;
 pub const Lexer = struct {
     allocator: Allocator,
     var interp: Interpreter = undefined;
+    pub var hasRuntimeError: bool = false;
 
     pub fn init(allocator: Allocator) Lexer {
         return Lexer{
@@ -125,6 +126,7 @@ pub const Lexer = struct {
     }
 
     pub fn handleRuntimeError(token: Token, msg: str) void {
+        Lexer.hasRuntimeError = true;
         std.debug.print("{s}\n[line {d}]", .{msg, token.line});
     }
 

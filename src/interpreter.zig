@@ -13,6 +13,7 @@ const HeapValue = @import("value.zig").HeapValue;
 const Token = @import("token.zig").Token;
 const Lexer = @import("lexer.zig").Lexer;
 const Stmt = @import("stmt.zig").Stmt;
+const Environment = @import("environment.zig").Environment;
 
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
@@ -21,12 +22,14 @@ pub const Interpreter = struct {
     allocator: Allocator,
     statements: ArrayList(Stmt),
     values: ArrayList(*const HeapValue),
+    environment: Environment,
 
     pub fn init(allocator: Allocator, statements: ArrayList(Stmt)) Interpreter {
         return Interpreter{
             .allocator = allocator,
             .statements = statements,
             .values = ArrayList(*const HeapValue).init(allocator),
+            .environment = Environment.init(allocator),
         };
     }
 
@@ -54,6 +57,8 @@ pub const Interpreter = struct {
             stmt.deinit(self.statements.allocator);
         }
         self.statements.deinit();
+
+        self.environment.deinit();
     }
 };
 

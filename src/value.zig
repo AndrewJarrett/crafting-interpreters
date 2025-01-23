@@ -14,7 +14,6 @@ pub const HeapValue = struct {
 
     pub fn initWithFree(alloc: Allocator, value: anytype, freeValue: bool) *const HeapValue {
         const val = Value.init(value);
-
         const ptr = alloc.create(HeapValue) catch unreachable;
         ptr.alloc = alloc;
         ptr.value = val;
